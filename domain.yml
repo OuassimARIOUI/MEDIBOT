@@ -1,0 +1,32 @@
+version: "3.1"
+
+intents:
+  - greet
+  - goodbye
+  - check_feeling_good
+  - check_feeling_bad
+  - ask_time
+  - ask_date
+  - ask_medicine
+  - ask_nurse
+  - emergency
+  - affirm
+  - deny
+  - fallback
+
+responses:
+  utter_greet:
+    - text: "Bonsoir, je suis MediBot. Comment vous sentez-vous ?"
+
+  utter_goodbye:
+    - text: "Bonne nuit, reposez-vous bien."
+
+  utter_ask_help:
+    - text: "Souhaitez-vous que j'appelle une infirmière ?"
+
+  utter_fallback:
+    - text: "Je n'ai pas bien compris, pouvez-vous répéter s'il vous plaît ?"
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true
