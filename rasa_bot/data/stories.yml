@@ -1,0 +1,67 @@
+version: "3.1"
+
+stories:
+
+# -------------------------
+# Salutation simple
+# -------------------------
+- story: salutation patient
+  steps:
+    - intent: greet
+    - action: utter_greet
+
+# -------------------------
+# Patient va bien → fin
+# -------------------------
+- story: patient va bien
+  steps:
+    - intent: check_feeling_good
+    - action: utter_goodbye
+
+# -------------------------
+# Patient va mal → proposer aide
+# -------------------------
+- story: patient va mal
+  steps:
+    - intent: check_feeling_bad
+    - action: utter_ask_help
+
+# -------------------------
+# Demande heure
+# -------------------------
+- story: demander heure
+  steps:
+    - intent: ask_time
+    - action: utter_time
+
+# -------------------------
+# Demande date
+# -------------------------
+- story: demander date
+  steps:
+    - intent: ask_date
+    - action: utter_date
+
+# -------------------------
+# Demande médicament
+# -------------------------
+- story: demander medicament
+  steps:
+    - intent: ask_medicine
+    - action: utter_medicine
+
+# -------------------------
+# Demande infirmière
+# -------------------------
+- story: appeler infirmiere
+  steps:
+    - intent: ask_nurse
+    - action: utter_call_nurse
+
+# -------------------------
+# Urgence directe
+# -------------------------
+- story: urgence vitale
+  steps:
+    - intent: emergency
+    - action: utter_emergency

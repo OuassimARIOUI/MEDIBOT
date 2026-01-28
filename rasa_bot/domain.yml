@@ -1,0 +1,72 @@
+version: "3.1"
+
+intents:
+  - greet
+  - goodbye
+  - check_feeling_good
+  - check_feeling_bad
+  - ask_time
+  - ask_date
+  - ask_medicine
+  - ask_nurse
+  - emergency
+  - affirm
+  - deny
+  - fallback
+
+responses:
+
+ 
+  # SALUTATION
+  
+  utter_greet:
+    - text: "Bonsoir, je suis MediBot. Comment vous sentez-vous ?"
+
+  
+  # FIN / REPOS
+  
+  utter_goodbye:
+    - text: "Très bien. Reposez-vous bien et bonne nuit."
+
+  
+  # PATIENT VA MAL
+  
+  utter_ask_help:
+    - text: "Je suis désolé de l'entendre. Souhaitez-vous que j'appelle une infirmière ?"
+
+  
+  # HEURE / DATE (temporaire texte)
+  # (sera remplacé par actions Python)
+  
+  utter_time:
+    - text: "Je vais vous dire l'heure dans un instant."
+
+  utter_date:
+    - text: "Je vais vous dire la date dans un instant."
+
+ 
+  # MÉDICAMENTS (temporaire)
+
+  utter_medicine:
+    - text: "Je vérifie votre traitement et je reviens vers vous."
+
+
+  # APPEL INFIRMIÈRE
+
+  utter_call_nurse:
+    - text: "D'accord, je vais prévenir une infirmière immédiatement."
+
+
+  # URGENCE
+
+  utter_emergency:
+    - text: "C'est noté. Je vais chercher de l'aide tout de suite. Restez calme, je suis là."
+
+  # FALLBACK
+
+  utter_fallback:
+    - text: "Je n'ai pas bien compris. Pouvez-vous répéter doucement s'il vous plaît ?"
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true

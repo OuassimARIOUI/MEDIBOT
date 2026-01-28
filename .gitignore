@@ -6,6 +6,8 @@ __pycache__/
 # C extensions
 *.so
 
+/rasa_bot/.rasa
+/rasa_bot/models
 # Distribution / packaging
 .Python
 build/

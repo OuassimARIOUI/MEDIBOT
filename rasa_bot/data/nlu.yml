@@ -1,0 +1,135 @@
+version: "3.1"
+
+nlu:
+
+# -------------------------
+# SALUTATIONS
+# -------------------------
+- intent: greet
+  examples: |
+    - bonjour
+    - bonsoir
+    - salut
+    - bonsoir robot
+    - bonjour MediBot
+    - hey
+    - coucou
+
+- intent: goodbye
+  examples: |
+    - au revoir
+    - bonne nuit
+    - à plus tard
+    - merci bonne nuit
+    - tu peux partir
+    - laisse-moi dormir
+
+# -------------------------
+# ÉTAT DU PATIENT
+# -------------------------
+- intent: check_feeling_good
+  examples: |
+    - ça va
+    - je vais bien
+    - tout va bien
+    - ça va merci
+    - je me sens bien
+    - aucun problème
+
+- intent: check_feeling_bad
+  examples: |
+    - ça ne va pas
+    - je ne me sens pas bien
+    - je vais mal
+    - j'ai mal
+    - je suis fatigué
+    - je suis stressé
+    - je suis inquiet
+    - j'ai peur
+    - je me sens mal
+
+# -------------------------
+# DEMANDE HEURE / DATE
+# -------------------------
+- intent: ask_time
+  examples: |
+    - quelle heure est-il
+    - il est quelle heure
+    - tu peux me dire l'heure
+    - c'est quelle heure maintenant
+    - donne-moi l'heure
+
+- intent: ask_date
+  examples: |
+    - quel jour on est
+    - on est quel jour
+    - quelle est la date aujourd'hui
+    - on est quelle date
+    - c'est quel jour aujourd'hui
+    - je sort quand 
+    - quand je sort 
+    - je veut sortir
+    
+
+# -------------------------
+# MÉDICAMENTS
+# -------------------------
+- intent: ask_medicine
+  examples: |
+    - c'est quand ma prochaine dose
+    - quand est-ce que je prends mon médicament
+    - je dois prendre mon médicament quand
+    - c'est l'heure de mon traitement
+    - je prends quoi comme médicament
+    - c'est quand le doliprane
+    - quand je prends l'insuline
+    - mon traitement c'est pour quand
+
+# -------------------------
+# APPEL INFIRMIER
+# -------------------------
+- intent: ask_nurse
+  examples: |
+    - peux-tu appeler l'infirmière
+    - j'ai besoin d'une infirmière
+    - appelle quelqu'un
+    - j'ai besoin d'aide
+    - pouvez-vous appeler une infirmière
+    - je veux voir un soignant
+
+# -------------------------
+# URGENCE
+# -------------------------
+- intent: emergency
+  examples: |
+    - c'est urgent
+    - j'ai très mal
+    - je n'arrive pas à respirer
+    - je me sens très mal
+    - appelez les urgences
+    - je fais un malaise
+    - aidez-moi
+    - j'étouffe
+    - urgence
+
+# -------------------------
+# CONFIRMATION / REFUS
+# -------------------------
+- intent: affirm
+  examples: |
+    - oui
+    - oui s'il vous plaît
+    - d'accord
+    - ok
+    - je veux bien
+    - faites-le
+
+- intent: deny
+  examples: |
+    - non
+    - non merci
+    - ça ira
+    - pas besoin
+    - laisse tomber
+    - ce n'est pas nécessaire
+    - noooo
