@@ -2,9 +2,9 @@ version: "3.1"
 
 nlu:
 
-# -------------------------
+
 # SALUTATIONS
-# -------------------------
+
 - intent: greet
   examples: |
     - bonjour
@@ -15,6 +15,30 @@ nlu:
     - hey
     - coucou
 
+
+# IDENTIFICATION PATIENT
+
+- intent: identify_patient
+  examples: |
+    - je suis [dupont](last_name) [jean](first_name)
+    - je suis [jean](first_name) [dupont](last_name)
+    - mon nom est [martin](last_name) [marie](first_name)
+    - mon nom est [marie](first_name) [martin](last_name)
+    - je m'appelle [jean](first_name) [dupont](last_name)
+    - je m'appelle [dupont](last_name) [jean](first_name)
+    - c'est [marie](first_name) [martin](last_name)
+    - c'est [martin](last_name) [marie](first_name)
+    - [dupont](last_name) [jean](first_name)
+    - [jean](first_name) [dupont](last_name)
+    - [marie](first_name) [martin](last_name)
+    - [martin](last_name) [marie](first_name)
+    - je suis monsieur [dupont](last_name) [jean](first_name)
+    - je suis monsieur [jean](first_name) [dupont](last_name)
+    - madame [martin](last_name) [marie](first_name)
+    - madame [marie](first_name) [martin](last_name)
+    - moi c'est [jean](first_name) [dupont](last_name)
+    - [jean](first_name) de la chambre [dupont](last_name)
+
 - intent: goodbye
   examples: |
     - au revoir
@@ -24,9 +48,9 @@ nlu:
     - tu peux partir
     - laisse-moi dormir
 
-# -------------------------
+
 # ÉTAT DU PATIENT
-# -------------------------
+
 - intent: check_feeling_good
   examples: |
     - ça va
@@ -48,9 +72,9 @@ nlu:
     - j'ai peur
     - je me sens mal
 
-# -------------------------
+
 # DEMANDE HEURE / DATE
-# -------------------------
+
 - intent: ask_time
   examples: |
     - quelle heure est-il
@@ -66,14 +90,26 @@ nlu:
     - quelle est la date aujourd'hui
     - on est quelle date
     - c'est quel jour aujourd'hui
-    - je sort quand 
-    - quand je sort 
-    - je veut sortir
+
+
+# DATE DE SORTIE
+
+- intent: ask_discharge
+  examples: |
+    - je sors quand
+    - quand je sors
+    - je veux sortir
+    - quelle est ma date de sortie
+    - c'est quand ma sortie
+    - quand est-ce que je peux partir
+    - quand je peux rentrer chez moi
+    - ma date de sortie
+    - je rentre quand
     
 
-# -------------------------
+
 # MÉDICAMENTS
-# -------------------------
+
 - intent: ask_medicine
   examples: |
     - c'est quand ma prochaine dose
@@ -81,13 +117,19 @@ nlu:
     - je dois prendre mon médicament quand
     - c'est l'heure de mon traitement
     - je prends quoi comme médicament
-    - c'est quand le doliprane
-    - quand je prends l'insuline
+    - c'est quand le [doliprane](medicine)
+    - quand je prends l'[insuline](medicine)
     - mon traitement c'est pour quand
+    - je veux prendre [doliprane](medicine)
+    - c'est quand je peux prendre mes médicaments
+    - je peux prendre [insuline](medicine)
+    - [paracétamol](medicine) c'est pour quand
+    - mon [doliprane](medicine)
+    - [aspirine](medicine) à quelle heure
 
-# -------------------------
+
 # APPEL INFIRMIER
-# -------------------------
+
 - intent: ask_nurse
   examples: |
     - peux-tu appeler l'infirmière
@@ -97,9 +139,9 @@ nlu:
     - pouvez-vous appeler une infirmière
     - je veux voir un soignant
 
-# -------------------------
+
 # URGENCE
-# -------------------------
+
 - intent: emergency
   examples: |
     - urgence
@@ -116,9 +158,9 @@ nlu:
     - SOS
 
 
-# -------------------------
+
 # CONFIRMATION / REFUS
-# -------------------------
+
 - intent: affirm
   examples: |
     - oui

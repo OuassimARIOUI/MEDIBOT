@@ -2,33 +2,41 @@ version: "3.1"
 
 rules:
 
-# -------------------------
+
+# Règle : identification patient
+
+- rule: identifier le patient
+  steps:
+    - intent: identify_patient
+    - action: action_identify_patient
+
+
 # Règle : toujours répondre à une salutation
-# -------------------------
+
 - rule: repondre au bonjour
   steps:
     - intent: greet
     - action: utter_greet
 
-# -------------------------
+
 # Règle : urgence = réponse immédiate
-# -------------------------
+
 - rule: urgence toujours prioritaire
   steps:
     - intent: emergency
     - action: utter_emergency
 
-# -------------------------
+
 # Règle : appeler infirmière
-# -------------------------
+
 - rule: appel infirmiere
   steps:
     - intent: ask_nurse
     - action: utter_call_nurse
 
-# -------------------------
+
 # Règle : fallback
-# -------------------------
+
 - rule: fallback patient
   steps:
     - intent: fallback

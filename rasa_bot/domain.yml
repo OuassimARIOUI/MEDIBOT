@@ -3,16 +3,58 @@ version: "3.1"
 intents:
   - greet
   - goodbye
+  - identify_patient
   - check_feeling_good
   - check_feeling_bad
   - ask_time
   - ask_date
   - ask_medicine
+  - ask_discharge
   - ask_nurse
   - emergency
   - affirm
   - deny
   - fallback
+
+entities:
+  - first_name
+  - last_name
+  - medicine
+
+slots:
+  first_name:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: from_entity
+        entity: first_name
+  
+  last_name:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: from_entity
+        entity: last_name
+  
+  patient_id:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: custom
+  
+  patient_full_name:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+
+actions:
+  - action_get_time
+  - action_get_date
+  - action_get_medicine
+  - action_get_discharge
+  - action_trigger_alert
+  - action_identify_patient
 
 responses:
 
@@ -20,7 +62,13 @@ responses:
   # SALUTATION
   
   utter_greet:
-    - text: "Bonsoir, je suis MediBot. Comment vous sentez-vous ?"
+    - text: "Bonsoir, je suis MediBot. Quel est votre nom et prénom ?"
+  
+  utter_ask_name:
+    - text: "Quel est votre nom et prénom, s'il vous plaît ?"
+  
+  utter_not_identified:
+    - text: "Je ne vous ai pas encore identifié. Dites-moi votre nom et prénom, s'il vous plaît."
 
   
   # FIN / REPOS

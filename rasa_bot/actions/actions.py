@@ -1,9 +1,18 @@
 from typing import Any, Text, Dict, List
 from datetime import datetime
-import sqlite3
 
 from rasa_sdk import Action, Tracker
 from rasa_sdk.executor import CollectingDispatcher
+from rasa_sdk.events import SlotSet
+
+from actions.db_utils import (
+    get_medicine_next_time,
+    insert_alert,
+    get_patient_by_name,
+    get_patient_medicines,
+    get_patient_discharge_date
+)
+
 
 
 # ACTION : Donner l'heure actuelle
@@ -25,6 +34,7 @@ class ActionGetTime(Action):
         return []
 
 
+
 # ACTION : Donner la date actuelle
 
 class ActionGetDate(Action):
@@ -44,7 +54,113 @@ class ActionGetDate(Action):
         return []
 
 
-# ACTION : Vérifier un médicament (SQLite réel)
+
+
+# ACTION : Identifier le patient (OPTIMISÉE)
+
+class ActionIdentifyPatient(Action):
+
+    def name(self) -> Text:
+        return "action_identify_patient"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+
+        # Récupérer prénom et nom depuis les entités
+        first_name = next(tracker.get_latest_entity_values("first_name"), None)
+        last_name = next(tracker.get_latest_entity_values("last_name"), None)
+
+        # Vérifier que les deux sont fournis
+        if not first_name or not last_name:
+            dispatcher.utter_message(text="Je n'ai pas bien compris. Dites-moi votre prénom et nom, s'il vous plaît.")
+            return []
+
+        try:
+            # Rechercher le patient dans la base
+            patient = get_patient_by_name(first_name, last_name)
+
+            if patient:
+                patient_id, db_first, db_last, discharge_date = patient
+                full_name = f"{db_first} {db_last}"
+                
+                dispatcher.utter_message(
+                    text=f"Bonjour {full_name}, je vous ai identifié. Comment puis-je vous aider ce soir ?"
+                )
+                
+                # Stocker dans les slots (mémoire du bot)
+                return [
+                    SlotSet("first_name", db_first),
+                    SlotSet("last_name", db_last),
+                    SlotSet("patient_id", patient_id),
+                    SlotSet("patient_full_name", full_name)
+                ]
+            else:
+                dispatcher.utter_message(
+                    text=f"Désolé, je ne trouve pas de patient nommé {first_name} {last_name} dans mes données."
+                )
+                return []
+
+        except Exception as e:
+            dispatcher.utter_message(
+                text="Une erreur est survenue lors de votre identification."
+            )
+            print(f"[ERREUR DB IDENTIFICATION] {e}")
+            return []
+
+
+
+# ======================================
+# ACTION : Date de sortie (NOUVEAU)
+# ======================================
+
+class ActionGetDischarge(Action):
+
+    def name(self) -> Text:
+        return "action_get_discharge"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+
+        patient_id = tracker.get_slot("patient_id")
+        
+        # Vérifier identification
+        if not patient_id:
+            dispatcher.utter_message(response="utter_not_identified")
+            return []
+
+        try:
+            discharge_date = get_patient_discharge_date(patient_id)
+            
+            if discharge_date:
+                dispatcher.utter_message(
+                    text=f"Votre date de sortie prévue est le {discharge_date}."
+                )
+            else:
+                dispatcher.utter_message(
+                    text="Je n'ai pas d'information sur votre date de sortie pour le moment."
+                )
+
+        except Exception as e:
+            dispatcher.utter_message(
+                text="Une erreur est survenue lors de la consultation de votre date de sortie."
+            )
+            print(f"[ERREUR DB DISCHARGE] {e}")
+
+        return []
+
+
+
+# ======================================
+# ACTION : Vérifier médicament (OPTIMISÉE)
+# ======================================
 
 class ActionGetMedicine(Action):
 
@@ -58,44 +174,56 @@ class ActionGetMedicine(Action):
         domain: Dict[Text, Any],
     ) -> List[Dict[Text, Any]]:
 
-        # Récupération de l'entité "medicine"
+        patient_id = tracker.get_slot("patient_id")
         medicine = next(tracker.get_latest_entity_values("medicine"), None)
 
-        if not medicine:
-            dispatcher.utter_message(
-                text="Pouvez-vous me dire le nom du médicament, s'il vous plaît ?"
-            )
+        # Vérifier identification
+        if not patient_id:
+            dispatcher.utter_message(response="utter_not_identified")
             return []
 
-        try:
-            conn = sqlite3.connect("medibot.db")
-            cursor = conn.cursor()
+        # Si médicament spécifique demandé
+        if medicine:
+            try:
+                next_time = get_medicine_next_time(patient_id, medicine)
 
-            cursor.execute("""
-                SELECT next_time
-                FROM medications
-                WHERE LOWER(medicine_name) = LOWER(?)
-            """, (medicine,))
+                if next_time:
+                    dispatcher.utter_message(
+                        text=f"Votre prochaine prise de {medicine} est prévue à {next_time}."
+                    )
+                else:
+                    dispatcher.utter_message(
+                        text=f"Je n'ai pas trouvé le médicament {medicine} dans votre traitement."
+                    )
 
-            result = cursor.fetchone()
-            conn.close()
-
-            if result:
+            except Exception as e:
                 dispatcher.utter_message(
-                    text=f"Votre prochaine prise de {medicine} est prévue à {result[0]}."
+                    text="Une erreur est survenue lors de la consultation."
                 )
-            else:
+                print(f"[ERREUR DB MEDICINE] {e}")
+        
+        # Sinon, afficher tous les médicaments
+        else:
+            try:
+                medicines = get_patient_medicines(patient_id)
+                
+                if medicines:
+                    msg = "Voici votre traitement :\n"
+                    for med_name, next_time in medicines:
+                        msg += f"• {med_name} à {next_time}\n"
+                    dispatcher.utter_message(text=msg)
+                else:
+                    dispatcher.utter_message(
+                        text="Vous n'avez pas de médicaments enregistrés."
+                    )
+            except Exception as e:
                 dispatcher.utter_message(
-                    text=f"Je n'ai pas trouvé d'information pour le médicament {medicine}."
+                    text="Une erreur est survenue lors de la consultation."
                 )
-
-        except Exception as e:
-            dispatcher.utter_message(
-                text="Une erreur est survenue lors de la consultation des médicaments."
-            )
-            print(f"[ERREUR DB] {e}")
+                print(f"[ERREUR DB MEDICINES] {e}")
 
         return []
+
 
 
 # ACTION : Déclencher une alerte (Sprint 01)
@@ -112,9 +240,12 @@ class ActionTriggerAlert(Action):
         domain: Dict[Text, Any],
     ) -> List[Dict[Text, Any]]:
 
-        print("🚨 ALERTE MEDIBOT 🚨")
-        print(f"Heure : {datetime.now()}")
-        print(f"Message patient : {tracker.latest_message.get('text')}")
+        message = tracker.latest_message.get("text")
+
+        try:
+            insert_alert(message=message)
+        except Exception as e:
+            print(f"[ERREUR ALERT DB] {e}")
 
         dispatcher.utter_message(
             text="Une alerte a été envoyée. Une infirmière va arriver."

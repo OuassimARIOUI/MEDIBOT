@@ -2,65 +2,94 @@ version: "3.1"
 
 stories:
 
-# -------------------------
+
+# Salutation → Identification → Service
+
+- story: salutation et identification
+  steps:
+    - intent: greet
+    - action: utter_greet
+    - intent: identify_patient
+    - action: action_identify_patient
+    - intent: ask_medicine
+    - action: action_get_medicine
+
+
+# Identification directe puis demande
+
+- story: identification puis medicament
+  steps:
+    - intent: identify_patient
+    - action: action_identify_patient
+    - intent: ask_medicine
+    - action: action_get_medicine
+
+- story: identification puis date sortie
+  steps:
+    - intent: identify_patient
+    - action: action_identify_patient
+    - intent: ask_discharge
+    - action: action_get_discharge
+
+
 # Salutation simple
-# -------------------------
+
 - story: salutation patient
   steps:
     - intent: greet
     - action: utter_greet
 
-# -------------------------
+
 # Patient va bien → fin
-# -------------------------
+
 - story: patient va bien
   steps:
     - intent: check_feeling_good
     - action: utter_goodbye
 
-# -------------------------
+
 # Patient va mal → proposer aide
-# -------------------------
+
 - story: patient va mal
   steps:
     - intent: check_feeling_bad
     - action: utter_ask_help
 
-# -------------------------
+
 # Demande heure
-# -------------------------
+
 - story: demander heure
   steps:
     - intent: ask_time
-    - action: utter_time
+    - action: action_get_time
 
-# -------------------------
+
 # Demande date
-# -------------------------
+
 - story: demander date
   steps:
     - intent: ask_date
-    - action: utter_date
+    - action: action_get_date
 
-# -------------------------
+
 # Demande médicament
-# -------------------------
+
 - story: demander medicament
   steps:
     - intent: ask_medicine
-    - action: utter_medicine
+    - action: action_get_medicine
 
-# -------------------------
+
 # Demande infirmière
-# -------------------------
+
 - story: appeler infirmiere
   steps:
     - intent: ask_nurse
     - action: utter_call_nurse
 
-# -------------------------
+
 # Urgence directe
-# -------------------------
+
 - story: urgence vitale
   steps:
     - intent: emergency

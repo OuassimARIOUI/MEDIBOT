@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS patients (
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
     age INTEGER,
-    room_number TEXT
+    room_number TEXT,
+    discharge_date TEXT
 );
 
 -- ---------- MEDICATIONS ----------
@@ -35,9 +36,9 @@ CREATE TABLE IF NOT EXISTS alerts (
 -- DONNÉES INITIALES
 -- ==========================
 
-INSERT OR IGNORE INTO patients (patient_id, first_name, last_name, age, room_number) VALUES
-('PAT001', 'Jean', 'Dupont', 72, '203'),
-('PAT002', 'Marie', 'Martin', 68, '204');
+INSERT OR IGNORE INTO patients (patient_id, first_name, last_name, age, room_number, discharge_date) VALUES
+('PAT001', 'Jean', 'Dupont', 72, '203', '05/02/2026'),
+('PAT002', 'Marie', 'Martin', 68, '204', '10/02/2026');
 
 INSERT OR IGNORE INTO medications (patient_id, medicine_name, next_time) VALUES
 ('PAT001', 'doliprane', '22:00'),
