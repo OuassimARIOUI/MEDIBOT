@@ -2,6 +2,8 @@
 -- DATABASE : medibot.db
 -- ==========================
 
+PRAGMA foreign_keys = ON;
+
 -- ---------- PATIENTS ----------
 CREATE TABLE IF NOT EXISTS patients (
     patient_id TEXT PRIMARY KEY,
@@ -11,7 +13,7 @@ CREATE TABLE IF NOT EXISTS patients (
     room_number TEXT
 );
 
--- ---------- MEDICAMENTS ----------
+-- ---------- MEDICATIONS ----------
 CREATE TABLE IF NOT EXISTS medications (
     medication_id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id TEXT NOT NULL,
@@ -20,19 +22,20 @@ CREATE TABLE IF NOT EXISTS medications (
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
 );
 
--- ---------- ALERTES ----------
+-- ---------- ALERTS ----------
 CREATE TABLE IF NOT EXISTS alerts (
     alert_id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id TEXT,
     message TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
 );
 
 -- ==========================
--- DONNÉES FIXES (2 PATIENTS)
+-- DONNÉES INITIALES
 -- ==========================
 
-INSERT OR IGNORE INTO patients VALUES
+INSERT OR IGNORE INTO patients (patient_id, first_name, last_name, age, room_number) VALUES
 ('PAT001', 'Jean', 'Dupont', 72, '203'),
 ('PAT002', 'Marie', 'Martin', 68, '204');
 

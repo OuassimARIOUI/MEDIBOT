@@ -4,7 +4,6 @@ import sqlite3
 
 from rasa_sdk import Action, Tracker
 from rasa_sdk.executor import CollectingDispatcher
-from rasa_sdk.events import SlotSet
 
 
 # ACTION : Donner l'heure actuelle
@@ -45,7 +44,7 @@ class ActionGetDate(Action):
         return []
 
 
-# ACTION : Vérifier le médicament (SQLite factice)
+# ACTION : Vérifier un médicament (SQLite réel)
 
 class ActionGetMedicine(Action):
 
@@ -59,7 +58,7 @@ class ActionGetMedicine(Action):
         domain: Dict[Text, Any],
     ) -> List[Dict[Text, Any]]:
 
-        # Récupération de l'entité medicine
+        # Récupération de l'entité "medicine"
         medicine = next(tracker.get_latest_entity_values("medicine"), None)
 
         if not medicine:
@@ -68,50 +67,38 @@ class ActionGetMedicine(Action):
             )
             return []
 
-        # Connexion SQLite factice
-        conn = sqlite3.connect("medibot_medicines.db")
-        cursor = conn.cursor()
+        try:
+            conn = sqlite3.connect("medibot.db")
+            cursor = conn.cursor()
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS medicines (
-                name TEXT,
-                next_time TEXT
-            )
-        """)
+            cursor.execute("""
+                SELECT next_time
+                FROM medications
+                WHERE LOWER(medicine_name) = LOWER(?)
+            """, (medicine,))
 
-        # Données factices si base vide
-        cursor.execute("SELECT COUNT(*) FROM medicines")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute(
-                "INSERT INTO medicines VALUES (?, ?)",
-                ("doliprane", "22:00")
-            )
-            cursor.execute(
-                "INSERT INTO medicines VALUES (?, ?)",
-                ("insuline", "23:30")
-            )
-            conn.commit()
+            result = cursor.fetchone()
+            conn.close()
 
-        cursor.execute(
-            "SELECT next_time FROM medicines WHERE name = ?",
-            (medicine.lower(),)
-        )
-        result = cursor.fetchone()
+            if result:
+                dispatcher.utter_message(
+                    text=f"Votre prochaine prise de {medicine} est prévue à {result[0]}."
+                )
+            else:
+                dispatcher.utter_message(
+                    text=f"Je n'ai pas trouvé d'information pour le médicament {medicine}."
+                )
 
-        if result:
+        except Exception as e:
             dispatcher.utter_message(
-                text=f"Votre prochaine prise de {medicine} est prévue à {result[0]}."
+                text="Une erreur est survenue lors de la consultation des médicaments."
             )
-        else:
-            dispatcher.utter_message(
-                text=f"Je n'ai pas trouvé d'information pour le médicament {medicine}."
-            )
+            print(f"[ERREUR DB] {e}")
 
-        conn.close()
         return []
 
 
-# ACTION : Déclencher une alerte (Sprint 01 : log)
+# ACTION : Déclencher une alerte (Sprint 01)
 
 class ActionTriggerAlert(Action):
 
