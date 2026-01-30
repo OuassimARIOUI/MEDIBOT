@@ -102,15 +102,19 @@ nlu:
 # -------------------------
 - intent: emergency
   examples: |
-    - c'est urgent
-    - j'ai très mal
-    - je n'arrive pas à respirer
-    - je me sens très mal
-    - appelez les urgences
-    - je fais un malaise
-    - aidez-moi
-    - j'étouffe
     - urgence
+    - c'est urgent
+    - c’est très urgent
+    - j'ai besoin d'aide tout de suite
+    - j'ai très mal
+    - je ne vais pas bien du tout
+    - je n'arrive pas à respirer
+    - aidez-moi
+    - appelez quelqu'un immédiatement
+    - c'est grave
+    - URGENT
+    - SOS
+
 
 # -------------------------
 # CONFIRMATION / REFUS
