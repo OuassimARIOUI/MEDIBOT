@@ -1,0 +1,12 @@
+
+# Actions Python
+
+action_endpoint:
+  url: "http://localhost:5055/webhook"
+
+
+# Tracker Store (SQLite)
+tracker_store:
+  type: SQL
+  dialect: "sqlite"
+  db: "medibot_tracker.db"
