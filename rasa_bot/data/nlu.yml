@@ -17,27 +17,28 @@ nlu:
 
 
 # IDENTIFICATION PATIENT
+# Note: L'action récupère dynamiquement les noms depuis la DB
+# Ces exemples servent uniquement à entraîner l'intent
 
 - intent: identify_patient
   examples: |
-    - je suis [dupont](last_name) [jean](first_name)
-    - je suis [jean](first_name) [dupont](last_name)
-    - mon nom est [martin](last_name) [marie](first_name)
-    - mon nom est [marie](first_name) [martin](last_name)
-    - je m'appelle [jean](first_name) [dupont](last_name)
-    - je m'appelle [dupont](last_name) [jean](first_name)
-    - c'est [marie](first_name) [martin](last_name)
-    - c'est [martin](last_name) [marie](first_name)
-    - [dupont](last_name) [jean](first_name)
-    - [jean](first_name) [dupont](last_name)
-    - [marie](first_name) [martin](last_name)
-    - [martin](last_name) [marie](first_name)
-    - je suis monsieur [dupont](last_name) [jean](first_name)
-    - je suis monsieur [jean](first_name) [dupont](last_name)
-    - madame [martin](last_name) [marie](first_name)
-    - madame [marie](first_name) [martin](last_name)
-    - moi c'est [jean](first_name) [dupont](last_name)
-    - [jean](first_name) de la chambre [dupont](last_name)
+    - je suis pierre dupont
+    - je suis dupont pierre
+    - mon nom est marie martin
+    - mon nom est martin marie
+    - je m'appelle jean durand
+    - je m'appelle durand jean
+    - c'est sophie bernard
+    - c'est bernard sophie
+    - moi c'est paul moreau
+    - je suis monsieur laurent philippe
+    - madame claire benoit
+    - bonjour je suis ahmed benali
+    - bonsoir je suis fatima kaddour
+    - ouassim arioui
+    - asmaa boukraa
+    - je suis ouassim arioui
+    - je suis asmaa boukraa
 
 - intent: goodbye
   examples: |

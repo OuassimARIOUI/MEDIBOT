@@ -1,5 +1,6 @@
 from typing import Any, Text, Dict, List
 from datetime import datetime
+import re
 
 from rasa_sdk import Action, Tracker
 from rasa_sdk.executor import CollectingDispatcher
@@ -10,7 +11,8 @@ from actions.db_utils import (
     insert_alert,
     get_patient_by_name,
     get_patient_medicines,
-    get_patient_discharge_date
+    get_patient_discharge_date,
+    get_all_patients
 )
 
 
@@ -56,7 +58,7 @@ class ActionGetDate(Action):
 
 
 
-# ACTION : Identifier le patient (OPTIMISÉE)
+# ACTION : Identifier le patient (DYNAMIQUE DEPUIS LA DB)
 
 class ActionIdentifyPatient(Action):
 
@@ -70,21 +72,62 @@ class ActionIdentifyPatient(Action):
         domain: Dict[Text, Any],
     ) -> List[Dict[Text, Any]]:
 
-        # Récupérer prénom et nom depuis les entités
-        first_name = next(tracker.get_latest_entity_values("first_name"), None)
-        last_name = next(tracker.get_latest_entity_values("last_name"), None)
-
-        # Vérifier que les deux sont fournis
-        if not first_name or not last_name:
-            dispatcher.utter_message(text="Je n'ai pas bien compris. Dites-moi votre prénom et nom, s'il vous plaît.")
+        # Récupérer le message de l'utilisateur
+        user_message = tracker.latest_message.get('text', '').lower()
+        
+        # Nettoyer le message (enlever les phrases d'intro)
+        patterns_to_remove = [
+            r"^je suis ",
+            r"^je m'appelle ",
+            r"^mon nom est ",
+            r"^c'est ",
+            r"^moi c'est ",
+            r"^bonjour je suis ",
+            r"^bonsoir je suis ",
+            r"monsieur ",
+            r"madame ",
+        ]
+        
+        cleaned_message = user_message
+        for pattern in patterns_to_remove:
+            cleaned_message = re.sub(pattern, '', cleaned_message, flags=re.IGNORECASE)
+        
+        # Extraire les mots (potentiellement prénom et nom)
+        words = cleaned_message.strip().split()
+        
+        if len(words) < 2:
+            dispatcher.utter_message(
+                text="Je n'ai pas bien compris. Dites-moi votre prénom et nom, s'il vous plaît."
+            )
             return []
 
         try:
-            # Rechercher le patient dans la base
-            patient = get_patient_by_name(first_name, last_name)
-
-            if patient:
-                patient_id, db_first, db_last, discharge_date = patient
+            # Récupérer tous les patients de la DB
+            all_patients = get_all_patients()
+            
+            if not all_patients:
+                dispatcher.utter_message(
+                    text="Désolé, je n'ai pas accès à la liste des patients pour le moment."
+                )
+                return []
+            
+            # Chercher une correspondance dans la DB
+            found_patient = None
+            
+            for patient in all_patients:
+                patient_id, db_first, db_last, room, discharge = patient
+                db_first_lower = db_first.lower()
+                db_last_lower = db_last.lower()
+                
+                # Vérifier si le prénom ET le nom sont dans les mots (dans n'importe quel ordre)
+                words_lower = [w.lower() for w in words]
+                
+                if db_first_lower in words_lower and db_last_lower in words_lower:
+                    found_patient = (patient_id, db_first, db_last, discharge)
+                    break
+            
+            if found_patient:
+                patient_id, db_first, db_last, discharge_date = found_patient
                 full_name = f"{db_first} {db_last}"
                 
                 dispatcher.utter_message(
@@ -99,8 +142,9 @@ class ActionIdentifyPatient(Action):
                     SlotSet("patient_full_name", full_name)
                 ]
             else:
+                # Aucun patient trouvé
                 dispatcher.utter_message(
-                    text=f"Désolé, je ne trouve pas de patient nommé {first_name} {last_name} dans mes données."
+                    text=f"Désolé, je ne trouve pas de patient correspondant à '{' '.join(words)}' dans mes données."
                 )
                 return []
 

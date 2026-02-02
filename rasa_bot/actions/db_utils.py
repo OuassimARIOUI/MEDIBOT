@@ -15,6 +15,25 @@ def get_connection():
     return sqlite3.connect(DB_PATH)
 
 
+def get_all_patients() -> List[Tuple[str, str, str, str, str]]:
+    """
+    Récupère tous les patients de la base de données.
+    Retourne une liste de tuples: (patient_id, first_name, last_name, room_number, discharge_date)
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT patient_id, first_name, last_name, room_number, discharge_date
+        FROM patients
+    """)
+
+    results = cursor.fetchall()
+    conn.close()
+
+    return results
+
+
 def get_patient_by_name(first_name: str, last_name: str) -> Optional[Tuple[str, str, str, str]]:
     """
     Recherche un patient par prénom ET nom.
