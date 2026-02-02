@@ -23,7 +23,7 @@ Vérifie que le chemin absolu fonctionne correctement.
 
 **Exécution** :
 ```bash
-cd D:\M1_S2\AmsProjet\MEDIBOT
+cd D:\M1_S2\AmsProjet\MEDIBOT 
 python test\test_db_path.py
 ```
 

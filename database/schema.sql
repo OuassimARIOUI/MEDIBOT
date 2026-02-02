@@ -37,8 +37,8 @@ CREATE TABLE IF NOT EXISTS alerts (
 -- ==========================
 
 INSERT OR IGNORE INTO patients (patient_id, first_name, last_name, age, room_number, discharge_date) VALUES
-('PAT001', 'Jean', 'Dupont', 72, '203', '05/02/2026'),
-('PAT002', 'Marie', 'Martin', 68, '204', '10/02/2026');
+('PAT001', 'Ouassim', 'ARIOUI', 72, '203', '05/02/2026'),
+('PAT002', 'Asmaa', 'BOUKRAA', 68, '204', '10/02/2026');
 
 INSERT OR IGNORE INTO medications (patient_id, medicine_name, next_time) VALUES
 ('PAT001', 'doliprane', '22:00'),
