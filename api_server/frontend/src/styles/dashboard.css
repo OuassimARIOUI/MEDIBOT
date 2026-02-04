@@ -78,15 +78,31 @@ body {
   box-shadow: var(--shadow-md);
 }
 
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xs);
+}
+
+.header-title i {
+  font-size: 2rem;
+}
+
 .header-content h1 {
   font-size: 1.875rem;
   font-weight: 700;
-  margin-bottom: var(--spacing-xs);
 }
 
 .header-content p {
   font-size: 1rem;
   opacity: 0.9;
+  margin-left: 3.5rem;
 }
 
 .app-main {
@@ -143,6 +159,29 @@ body {
 
 .stat-icon {
   font-size: 2rem;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.stat-icon.alert {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+.stat-icon.success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.stat-icon.patients {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.stat-icon.warning {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
 }
 
 .stat-value {
@@ -185,6 +224,13 @@ body {
   cursor: pointer;
   transition: background-color 0.2s, color 0.2s;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.tab i {
+  font-size: 1rem;
 }
 
 .tab:hover {
@@ -205,6 +251,13 @@ body {
 .last-update {
   font-size: 0.875rem;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.last-update i {
+  color: var(--primary-color);
 }
 
 /* ============================================================================
@@ -273,6 +326,13 @@ body {
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.section-header h2 i {
+  color: var(--primary-color);
 }
 
 .no-alerts-badge {
@@ -282,6 +342,13 @@ body {
   border-radius: var(--radius-lg);
   font-size: 0.875rem;
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.no-alerts-badge i {
+  font-size: 1rem;
 }
 
 .alerts-grid {
@@ -327,6 +394,14 @@ body {
 
 .alert-icon {
   font-size: 2rem;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  color: var(--danger-color);
 }
 
 .alert-info {
@@ -386,6 +461,14 @@ body {
 .info-label {
   color: var(--text-secondary);
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.info-label i {
+  font-size: 0.875rem;
+  width: 16px;
 }
 
 .info-value {
@@ -404,11 +487,21 @@ body {
   background: #fef3c7;
   border-radius: var(--radius-sm);
   font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
 }
 
 .condition-label {
   font-weight: 600;
   color: #92400e;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.condition-label i {
+  font-size: 1rem;
 }
 
 .condition-value {
@@ -420,6 +513,13 @@ body {
   font-size: 0.8125rem;
   color: var(--text-secondary);
   font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.alert-timestamp i {
+  font-size: 0.875rem;
 }
 
 .alert-footer {
@@ -441,6 +541,13 @@ body {
   padding: var(--spacing-xs) var(--spacing-md);
   border-radius: var(--radius-sm);
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.handled-badge i {
+  font-size: 1rem;
 }
 
 .handled-by {
@@ -501,6 +608,13 @@ body {
   border-radius: var(--radius-lg);
   font-size: 0.8125rem;
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.room-badge i {
+  font-size: 0.875rem;
 }
 
 .alert-indicator {
@@ -514,8 +628,21 @@ body {
   font-weight: 600;
 }
 
+.alert-indicator i {
+  font-size: 1rem;
+  animation: ring 2s ease-in-out infinite;
+}
+
+@keyframes ring {
+  0%, 100% { transform: rotate(0deg); }
+  10%, 30% { transform: rotate(-10deg); }
+  20%, 40% { transform: rotate(10deg); }
+}
+
 .alert-count {
   font-size: 0.875rem;
+  min-width: 20px;
+  text-align: center;
 }
 
 .expand-btn {
@@ -549,6 +676,18 @@ body {
   font-size: 0.875rem;
 }
 
+.medical-condition-box .condition-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-weight: 600;
+  margin-right: var(--spacing-xs);
+}
+
+.medical-condition-box .condition-label i {
+  color: var(--primary-color);
+}
+
 .patient-details {
   margin-top: var(--spacing-md);
   padding-top: var(--spacing-md);
@@ -561,9 +700,16 @@ body {
 }
 
 .detail-section strong {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
   margin-bottom: var(--spacing-xs);
   color: var(--text-primary);
+}
+
+.detail-section strong i {
+  color: var(--primary-color);
+  font-size: 1rem;
 }
 
 .medication-list {
@@ -665,6 +811,11 @@ body {
   font-size: 4rem;
   margin-bottom: var(--spacing-md);
   opacity: 0.5;
+  color: var(--text-secondary);
+}
+
+.empty-icon i {
+  font-size: 4rem;
 }
 
 .empty-state h3 {
@@ -691,6 +842,16 @@ body {
   font-weight: 500;
 }
 
+.error-banner span {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.error-banner span i {
+  font-size: 1.25rem;
+}
+
 .error-banner button {
   background: transparent;
   border: none;
@@ -698,6 +859,14 @@ body {
   cursor: pointer;
   color: #991b1b;
   padding: 0 var(--spacing-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+
+.error-banner button:hover {
+  transform: scale(1.1);
 }
 
 /* ============================================================================

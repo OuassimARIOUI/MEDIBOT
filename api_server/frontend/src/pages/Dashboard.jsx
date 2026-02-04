@@ -169,7 +169,9 @@ const Dashboard = () => {
       {/* Statistics Bar */}
       <div className="stats-bar">
         <div className="stat-card">
-          <div className="stat-icon">🚨</div>
+          <div className="stat-icon alert">
+            <i className="fa-solid fa-bell"></i>
+          </div>
           <div className="stat-content">
             <div className="stat-value">{alertStats?.unhandled_alerts || 0}</div>
             <div className="stat-label">Alertes actives</div>
@@ -177,7 +179,9 @@ const Dashboard = () => {
         </div>
         
         <div className="stat-card">
-          <div className="stat-icon">✓</div>
+          <div className="stat-icon success">
+            <i className="fa-solid fa-check-circle"></i>
+          </div>
           <div className="stat-content">
             <div className="stat-value">{alertStats?.handled_alerts || 0}</div>
             <div className="stat-label">Alertes traitées</div>
@@ -185,7 +189,9 @@ const Dashboard = () => {
         </div>
         
         <div className="stat-card">
-          <div className="stat-icon">👥</div>
+          <div className="stat-icon patients">
+            <i className="fa-solid fa-users"></i>
+          </div>
           <div className="stat-content">
             <div className="stat-value">{patientStats?.total_patients || 0}</div>
             <div className="stat-label">Patients</div>
@@ -193,7 +199,9 @@ const Dashboard = () => {
         </div>
         
         <div className="stat-card">
-          <div className="stat-icon">⚠️</div>
+          <div className="stat-icon warning">
+            <i className="fa-solid fa-exclamation-triangle"></i>
+          </div>
           <div className="stat-content">
             <div className="stat-value">{patientStats?.patients_with_active_alerts || 0}</div>
             <div className="stat-label">Patients avec alertes</div>
@@ -208,22 +216,22 @@ const Dashboard = () => {
             className={`tab ${activeTab === 'alerts' ? 'active' : ''}`}
             onClick={() => setActiveTab('alerts')}
           >
-            🚨 Alertes ({alerts.length})
+            <i className="fa-solid fa-bell"></i> Alertes ({alerts.length})
           </button>
           <button 
             className={`tab ${activeTab === 'patients' ? 'active' : ''}`}
             onClick={() => setActiveTab('patients')}
           >
-            👥 Patients ({patients.length})
+            <i className="fa-solid fa-users"></i> Patients ({patients.length})
           </button>
         </div>
         
         <div className="control-actions">
           <div className="last-update">
-            Dernière mise à jour: {formatLastUpdate()}
+            <i className="fa-solid fa-clock"></i> Dernière mise à jour: {formatLastUpdate()}
           </div>
           <button className="btn btn-refresh" onClick={fetchData}>
-            🔄 Actualiser
+            <i className="fa-solid fa-sync"></i> Actualiser
           </button>
         </div>
       </div>
@@ -231,8 +239,12 @@ const Dashboard = () => {
       {/* Error Message */}
       {error && (
         <div className="error-banner">
-          <span>⚠️ {error}</span>
-          <button onClick={() => setError(null)}>✕</button>
+          <span>
+            <i className="fa-solid fa-exclamation-circle"></i> {error}
+          </span>
+          <button onClick={() => setError(null)}>
+            <i className="fa-solid fa-times"></i>
+          </button>
         </div>
       )}
 
@@ -241,9 +253,13 @@ const Dashboard = () => {
         {activeTab === 'alerts' && (
           <div className="alerts-section">
             <div className="section-header">
-              <h2>🚨 Alertes Actives</h2>
+              <h2>
+                <i className="fa-solid fa-bell"></i> Alertes Actives
+              </h2>
               {alerts.length === 0 && (
-                <span className="no-alerts-badge">✓ Aucune alerte</span>
+                <span className="no-alerts-badge">
+                  <i className="fa-solid fa-check"></i> Aucune alerte
+                </span>
               )}
             </div>
             
@@ -259,7 +275,9 @@ const Dashboard = () => {
               </div>
             ) : (
               <div className="empty-state">
-                <div className="empty-icon">✓</div>
+                <div className="empty-icon">
+                  <i className="fa-solid fa-check-circle"></i>
+                </div>
                 <h3>Aucune alerte active</h3>
                 <p>Toutes les alertes ont été prises en charge.</p>
               </div>
@@ -270,7 +288,9 @@ const Dashboard = () => {
         {activeTab === 'patients' && (
           <div className="patients-section">
             <div className="section-header">
-              <h2>👥 Patients</h2>
+              <h2>
+                <i className="fa-solid fa-users"></i> Patients
+              </h2>
             </div>
             
             {patients.length > 0 ? (
@@ -285,7 +305,9 @@ const Dashboard = () => {
               </div>
             ) : (
               <div className="empty-state">
-                <div className="empty-icon">👥</div>
+                <div className="empty-icon">
+                  <i className="fa-solid fa-users"></i>
+                </div>
                 <h3>Aucun patient</h3>
                 <p>Aucune donnée patient disponible.</p>
               </div>

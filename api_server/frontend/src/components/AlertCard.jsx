@@ -59,15 +59,15 @@ const AlertCard = ({ alert, onAcknowledge }) => {
   const getAlertIcon = (alertType) => {
     switch (alertType?.toLowerCase()) {
       case 'emergency':
-        return '🚨';
+        return 'fa-solid fa-circle-exclamation';
       case 'pain':
-        return '😰';
+        return 'fa-solid fa-heartbeat';
       case 'medication':
-        return '💊';
+        return 'fa-solid fa-pills';
       case 'fall':
-        return '⚠️';
+        return 'fa-solid fa-person-falling';
       default:
-        return '🔔';
+        return 'fa-solid fa-bell';
     }
   };
 
@@ -75,7 +75,7 @@ const AlertCard = ({ alert, onAcknowledge }) => {
     <div className={`alert-card ${getSeverityClass(alert.severity)}`}>
       <div className="alert-header">
         <div className="alert-icon">
-          {getAlertIcon(alert.alert_type)}
+          <i className={getAlertIcon(alert.alert_type)}></i>
         </div>
         <div className="alert-info">
           <h3 className="alert-title">
@@ -90,16 +90,22 @@ const AlertCard = ({ alert, onAcknowledge }) => {
       <div className="alert-body">
         <div className="patient-info">
           <div className="info-row">
-            <span className="info-label">👤 Patient:</span>
+            <span className="info-label">
+              <i className="fa-solid fa-user"></i> Patient:
+            </span>
             <span className="info-value">{alert.patient_name || 'Inconnu'}</span>
           </div>
           <div className="info-row">
-            <span className="info-label">🏥 Chambre:</span>
+            <span className="info-label">
+              <i className="fa-solid fa-door-open"></i> Chambre:
+            </span>
             <span className="info-value">{alert.room_number || 'N/A'}</span>
           </div>
           {alert.age && (
             <div className="info-row">
-              <span className="info-label">📅 Âge:</span>
+              <span className="info-label">
+                <i className="fa-solid fa-calendar"></i> Âge:
+              </span>
               <span className="info-value">{alert.age} ans</span>
             </div>
           )}
@@ -111,13 +117,15 @@ const AlertCard = ({ alert, onAcknowledge }) => {
 
         {alert.medical_condition && (
           <div className="medical-condition">
-            <span className="condition-label">Condition médicale:</span>
+            <span className="condition-label">
+              <i className="fa-solid fa-file-medical"></i> Condition médicale:
+            </span>
             <span className="condition-value">{alert.medical_condition}</span>
           </div>
         )}
 
         <div className="alert-timestamp">
-          ⏰ {formatTime(alert.timestamp)}
+          <i className="fa-solid fa-clock"></i> {formatTime(alert.timestamp)}
         </div>
       </div>
 
@@ -128,11 +136,21 @@ const AlertCard = ({ alert, onAcknowledge }) => {
             onClick={handleAcknowledge}
             disabled={isAcknowledging}
           >
-            {isAcknowledging ? '⏳ En cours...' : '✓ Prise en charge'}
+            {isAcknowledging ? (
+              <>
+                <i className="fa-solid fa-spinner fa-spin"></i> En cours...
+              </>
+            ) : (
+              <>
+                <i className="fa-solid fa-check"></i> Prise en charge
+              </>
+            )}
           </button>
         ) : (
           <div className="alert-handled">
-            <span className="handled-badge">✓ Traité</span>
+            <span className="handled-badge">
+              <i className="fa-solid fa-check-circle"></i> Traité
+            </span>
             {alert.handled_by && (
               <span className="handled-by">par {alert.handled_by}</span>
             )}

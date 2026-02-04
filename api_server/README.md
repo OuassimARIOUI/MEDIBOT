@@ -34,10 +34,13 @@ api_server/
 
 1. **Installer les dépendances Python** :
    ```bash
-   pip install flask flask-cors
+   pip install -r requirements.txt
    ```
 
-2. **Démarrer le serveur Flask** :
+2. **S'assurer que la base de données existe** :
+   La base de données doit être dans `database/medibot.db` (créée par RASA).
+
+3. **Démarrer le serveur Flask** :
    ```bash
    cd api_server
    python app.py

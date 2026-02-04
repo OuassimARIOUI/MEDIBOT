@@ -285,14 +285,26 @@ class ActionTriggerAlert(Action):
     ) -> List[Dict[Text, Any]]:
 
         message = tracker.latest_message.get("text")
+        
+        # Récupérer le patient_id depuis les slots (si identifié)
+        patient_id = tracker.get_slot("patient_id")
+        if not patient_id:
+            patient_id = "UNKNOWN"
 
         try:
-            insert_alert(message=message)
+            insert_alert(message=message, patient_id=patient_id)
         except Exception as e:
             print(f"[ERREUR ALERT DB] {e}")
 
-        dispatcher.utter_message(
-            text="Une alerte a été envoyée. Une infirmière va arriver."
-        )
+        # Message personnalisé selon identification
+        patient_name = tracker.get_slot("patient_full_name")
+        if patient_name:
+            dispatcher.utter_message(
+                text=f"{patient_name}, une alerte a été envoyée. Une infirmière va arriver immédiatement."
+            )
+        else:
+            dispatcher.utter_message(
+                text="Une alerte a été envoyée. Une infirmière va arriver."
+            )
 
         return []

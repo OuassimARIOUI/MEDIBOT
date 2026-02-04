@@ -44,14 +44,14 @@ const PatientCard = ({ patient, onViewDetails }) => {
             {patient.name}
           </h3>
           <span className="room-badge">
-            🏥 Chambre {patient.room_number}
+            <i className="fa-solid fa-door-open"></i> Chambre {patient.room_number}
           </span>
         </div>
         
         {activeAlertsCount > 0 && (
           <div className="alert-indicator">
+            <i className="fa-solid fa-bell"></i>
             <span className="alert-count">{activeAlertsCount}</span>
-            🔔
           </div>
         )}
         
@@ -74,7 +74,9 @@ const PatientCard = ({ patient, onViewDetails }) => {
         
         {patient.medical_condition && (
           <div className="medical-condition-box">
-            <span className="condition-label">📋 Condition:</span>
+            <span className="condition-label">
+              <i className="fa-solid fa-file-medical"></i> Condition:
+            </span>
             <span>{patient.medical_condition}</span>
           </div>
         )}
@@ -98,7 +100,9 @@ const PatientCard = ({ patient, onViewDetails }) => {
 
           {patient.medications && patient.medications.length > 0 && (
             <div className="detail-section medications-section">
-              <strong>💊 Médicaments ({patient.medications.length}):</strong>
+              <strong>
+                <i className="fa-solid fa-pills"></i> Médicaments ({patient.medications.length}):
+              </strong>
               <ul className="medication-list">
                 {patient.medications.map((med, index) => (
                   <li key={index} className="medication-item">
@@ -117,13 +121,19 @@ const PatientCard = ({ patient, onViewDetails }) => {
 
           {patient.recent_alerts && patient.recent_alerts.length > 0 && (
             <div className="detail-section alerts-section">
-              <strong>🔔 Alertes récentes:</strong>
+              <strong>
+                <i className="fa-solid fa-bell"></i> Alertes récentes:
+              </strong>
               <ul className="alerts-list">
                 {patient.recent_alerts.slice(0, 3).map((alert, index) => (
                   <li key={index} className={`alert-item ${alert.handled ? 'handled' : 'active'}`}>
                     <span className="alert-type">{alert.alert_type}</span>
                     <span className={`alert-status ${alert.handled ? 'handled' : 'active'}`}>
-                      {alert.handled ? '✓' : '⚠️'}
+                      {alert.handled ? (
+                        <i className="fa-solid fa-check"></i>
+                      ) : (
+                        <i className="fa-solid fa-exclamation-triangle"></i>
+                      )}
                     </span>
                   </li>
                 ))}

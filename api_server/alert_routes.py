@@ -48,34 +48,33 @@ def get_all_alerts():
         # Build query with JOIN to get patient info
         query = """
             SELECT 
-                a.id,
+                a.alert_id as id,
                 a.patient_id,
-                a.alert_type,
-                a.severity,
+                'general' as alert_type,
+                'medium' as severity,
                 a.message,
-                a.timestamp,
-                a.handled,
-                a.handled_at,
-                a.handled_by,
-                p.name as patient_name,
+                a.created_at as timestamp,
+                0 as handled,
+                NULL as handled_at,
+                NULL as handled_by,
+                p.first_name || ' ' || p.last_name as patient_name,
                 p.room_number,
-                p.age,
-                p.medical_condition
+                p.age
             FROM alerts a
-            LEFT JOIN patients p ON a.patient_id = p.id
+            LEFT JOIN patients p ON a.patient_id = p.patient_id
             WHERE 1=1
         """
         
         params = []
         
-        # Apply status filter
+        # Apply status filter (all alerts are unhandled in this schema)
         if status_filter == 'handled':
-            query += " AND a.handled = 1"
+            query += " AND 0 = 1"  # No handled alerts
         elif status_filter == 'unhandled':
-            query += " AND a.handled = 0"
+            query += " AND 1 = 1"  # All alerts
         
         # Order by timestamp (most recent first)
-        query += " ORDER BY a.timestamp DESC LIMIT ?"
+        query += " ORDER BY a.created_at DESC LIMIT ?"
         params.append(limit)
         
         cursor.execute(query, params)
@@ -90,7 +89,6 @@ def get_all_alerts():
                 "patient_name": row["patient_name"],
                 "room_number": row["room_number"],
                 "age": row["age"],
-                "medical_condition": row["medical_condition"],
                 "alert_type": row["alert_type"],
                 "severity": row["severity"],
                 "message": row["message"],
@@ -132,20 +130,19 @@ def get_unhandled_alerts():
         
         query = """
             SELECT 
-                a.id,
+                a.alert_id as id,
                 a.patient_id,
-                a.alert_type,
-                a.severity,
+                'general' as alert_type,
+                'medium' as severity,
                 a.message,
-                a.timestamp,
-                p.name as patient_name,
+                a.created_at as timestamp,
+                p.first_name || ' ' || p.last_name as patient_name,
                 p.room_number,
-                p.age,
-                p.medical_condition
+                p.age
             FROM alerts a
-            LEFT JOIN patients p ON a.patient_id = p.id
-            WHERE a.handled = 0
-            ORDER BY a.severity DESC, a.timestamp DESC
+            LEFT JOIN patients p ON a.patient_id = p.patient_id
+            WHERE 1=1
+            ORDER BY a.created_at DESC
         """
         
         cursor.execute(query)
@@ -159,7 +156,6 @@ def get_unhandled_alerts():
                 "patient_name": row["patient_name"],
                 "room_number": row["room_number"],
                 "age": row["age"],
-                "medical_condition": row["medical_condition"],
                 "alert_type": row["alert_type"],
                 "severity": row["severity"],
                 "message": row["message"],
@@ -205,7 +201,7 @@ def acknowledge_alert(alert_id):
         cursor = conn.cursor()
         
         # Check if alert exists
-        cursor.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,))
+        cursor.execute("SELECT * FROM alerts WHERE alert_id = ?", (alert_id,))
         alert = cursor.fetchone()
         
         if not alert:
@@ -215,23 +211,8 @@ def acknowledge_alert(alert_id):
                 "error": "Alert not found"
             }), 404
         
-        # Check if already handled
-        if alert["handled"]:
-            conn.close()
-            return jsonify({
-                "success": False,
-                "error": "Alert already handled",
-                "handled_at": alert["handled_at"],
-                "handled_by": alert["handled_by"]
-            }), 400
-        
-        # Update alert status
-        handled_at = datetime.now().isoformat()
-        cursor.execute("""
-            UPDATE alerts 
-            SET handled = 1, handled_at = ?, handled_by = ?
-            WHERE id = ?
-        """, (handled_at, handled_by, alert_id))
+        # Delete the alert (simulating acknowledgment)
+        cursor.execute("DELETE FROM alerts WHERE alert_id = ?", (alert_id,))
         
         conn.commit()
         conn.close()
@@ -250,7 +231,6 @@ def acknowledge_alert(alert_id):
             "success": True,
             "message": "Alert acknowledged successfully",
             "alert_id": alert_id,
-            "handled_at": handled_at,
             "handled_by": handled_by
         })
         
@@ -277,16 +257,21 @@ def get_alert_details(alert_id):
         
         query = """
             SELECT 
-                a.*,
-                p.name as patient_name,
+                a.alert_id as id,
+                a.patient_id,
+                'general' as alert_type,
+                'medium' as severity,
+                a.message,
+                a.created_at as timestamp,
+                0 as handled,
+                NULL as handled_at,
+                NULL as handled_by,
+                p.first_name || ' ' || p.last_name as patient_name,
                 p.room_number,
-                p.age,
-                p.gender,
-                p.medical_condition,
-                p.admission_date
+                p.age
             FROM alerts a
-            LEFT JOIN patients p ON a.patient_id = p.id
-            WHERE a.id = ?
+            LEFT JOIN patients p ON a.patient_id = p.patient_id
+            WHERE a.alert_id = ?
         """
         
         cursor.execute(query, (alert_id,))
@@ -312,10 +297,7 @@ def get_alert_details(alert_id):
             "patient": {
                 "name": row["patient_name"],
                 "room_number": row["room_number"],
-                "age": row["age"],
-                "gender": row["gender"],
-                "medical_condition": row["medical_condition"],
-                "admission_date": row["admission_date"]
+                "age": row["age"]
             }
         }
         
@@ -351,24 +333,14 @@ def get_alert_stats():
         cursor.execute("SELECT COUNT(*) as count FROM alerts")
         total = cursor.fetchone()["count"]
         
-        # Unhandled alerts
-        cursor.execute("SELECT COUNT(*) as count FROM alerts WHERE handled = 0")
-        unhandled = cursor.fetchone()["count"]
-        
-        # By severity
-        cursor.execute("""
-            SELECT severity, COUNT(*) as count 
-            FROM alerts 
-            WHERE handled = 0
-            GROUP BY severity
-        """)
-        severity_counts = {row["severity"]: row["count"] for row in cursor.fetchall()}
+        # All alerts are unhandled in this schema
+        unhandled = total
         
         # Recent alerts (last 24 hours)
         cursor.execute("""
             SELECT COUNT(*) as count 
             FROM alerts 
-            WHERE datetime(timestamp) >= datetime('now', '-1 day')
+            WHERE datetime(created_at) >= datetime('now', '-1 day')
         """)
         recent_24h = cursor.fetchone()["count"]
         
@@ -379,8 +351,8 @@ def get_alert_stats():
             "stats": {
                 "total_alerts": total,
                 "unhandled_alerts": unhandled,
-                "handled_alerts": total - unhandled,
-                "by_severity": severity_counts,
+                "handled_alerts": 0,
+                "by_severity": {"medium": unhandled},
                 "recent_24h": recent_24h
             }
         })

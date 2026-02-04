@@ -44,3 +44,6 @@ INSERT OR IGNORE INTO medications (patient_id, medicine_name, next_time) VALUES
 ('PAT001', 'doliprane', '22:00'),
 ('PAT001', 'insuline', '23:30'),
 ('PAT002', 'paracétamol', '21:00');
+INSERT OR IGNORE INTO alerts (patient_id, message) VALUES
+('PAT001', 'Patient PAT001 has missed their medication doliprane.'),
+('PAT002', 'Patient PAT002 has a critical alert: High blood pressure detected.');

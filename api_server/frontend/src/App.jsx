@@ -13,7 +13,10 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-content">
-          <h1>🏥 MediBot Nurse Dashboard</h1>
+          <div className="header-title">
+            <i className="fas fa-hospital-user"></i>
+            <h1>MediBot Nurse Dashboard</h1>
+          </div>
           <p>Système de surveillance des alertes patients</p>
         </div>
       </header>

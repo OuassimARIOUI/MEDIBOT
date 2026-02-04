@@ -93,4 +93,4 @@ stories:
 - story: urgence vitale
   steps:
     - intent: emergency
-    - action: utter_emergency
+    - action: action_trigger_alert

@@ -32,6 +32,7 @@ def create_app():
     app.config['JSON_AS_ASCII'] = False  # Support French characters
     app.config['DATABASE_PATH'] = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
+        'database',
         'medibot.db'
     )
     

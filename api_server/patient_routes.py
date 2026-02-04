@@ -43,14 +43,12 @@ def get_all_patients():
         
         query = """
             SELECT 
-                id,
-                name,
+                patient_id as id,
+                first_name,
+                last_name,
+                first_name || ' ' || last_name as name,
                 age,
-                gender,
-                room_number,
-                medical_condition,
-                admission_date,
-                emergency_contact
+                room_number
             FROM patients
             WHERE 1=1
         """
@@ -74,11 +72,7 @@ def get_all_patients():
                 "id": row["id"],
                 "name": row["name"],
                 "age": row["age"],
-                "gender": row["gender"],
-                "room_number": row["room_number"],
-                "medical_condition": row["medical_condition"],
-                "admission_date": row["admission_date"],
-                "emergency_contact": row["emergency_contact"]
+                "room_number": row["room_number"]
             })
         
         conn.close()
@@ -113,7 +107,15 @@ def get_patient_details(patient_id):
         
         # Get patient information
         cursor.execute("""
-            SELECT * FROM patients WHERE id = ?
+            SELECT 
+                patient_id as id,
+                first_name,
+                last_name,
+                first_name || ' ' || last_name as name,
+                age,
+                room_number
+            FROM patients 
+            WHERE patient_id = ?
         """, (patient_id,))
         
         patient_row = cursor.fetchone()
@@ -128,18 +130,11 @@ def get_patient_details(patient_id):
         # Get patient's medications
         cursor.execute("""
             SELECT 
-                m.id,
-                m.name,
-                m.dosage,
-                m.frequency,
-                m.side_effects,
-                m.instructions
-            FROM medications m
-            WHERE m.id IN (
-                SELECT medication_id 
-                FROM patient_medications 
-                WHERE patient_id = ?
-            )
+                medication_id as id,
+                medicine_name as name,
+                next_time as frequency
+            FROM medications
+            WHERE patient_id = ?
         """, (patient_id,))
         
         medication_rows = cursor.fetchall()
@@ -149,24 +144,20 @@ def get_patient_details(patient_id):
             medications.append({
                 "id": med["id"],
                 "name": med["name"],
-                "dosage": med["dosage"],
-                "frequency": med["frequency"],
-                "side_effects": med["side_effects"],
-                "instructions": med["instructions"]
+                "frequency": med["frequency"]
             })
         
         # Get recent alerts for this patient
         cursor.execute("""
             SELECT 
-                id,
-                alert_type,
-                severity,
+                alert_id as id,
+                'general' as alert_type,
                 message,
-                timestamp,
-                handled
+                created_at as timestamp,
+                0 as handled
             FROM alerts
             WHERE patient_id = ?
-            ORDER BY timestamp DESC
+            ORDER BY created_at DESC
             LIMIT 10
         """, (patient_id,))
         
@@ -177,7 +168,6 @@ def get_patient_details(patient_id):
             recent_alerts.append({
                 "id": alert["id"],
                 "alert_type": alert["alert_type"],
-                "severity": alert["severity"],
                 "message": alert["message"],
                 "timestamp": alert["timestamp"],
                 "handled": bool(alert["handled"])
@@ -190,11 +180,7 @@ def get_patient_details(patient_id):
             "id": patient_row["id"],
             "name": patient_row["name"],
             "age": patient_row["age"],
-            "gender": patient_row["gender"],
             "room_number": patient_row["room_number"],
-            "medical_condition": patient_row["medical_condition"],
-            "admission_date": patient_row["admission_date"],
-            "emergency_contact": patient_row["emergency_contact"],
             "medications": medications,
             "recent_alerts": recent_alerts
         }
@@ -226,7 +212,7 @@ def get_patient_medications(patient_id):
         cursor = conn.cursor()
         
         # Check if patient exists
-        cursor.execute("SELECT id FROM patients WHERE id = ?", (patient_id,))
+        cursor.execute("SELECT patient_id FROM patients WHERE patient_id = ?", (patient_id,))
         if not cursor.fetchone():
             conn.close()
             return jsonify({
@@ -237,18 +223,11 @@ def get_patient_medications(patient_id):
         # Get medications
         cursor.execute("""
             SELECT 
-                m.id,
-                m.name,
-                m.dosage,
-                m.frequency,
-                m.side_effects,
-                m.instructions
-            FROM medications m
-            WHERE m.id IN (
-                SELECT medication_id 
-                FROM patient_medications 
-                WHERE patient_id = ?
-            )
+                medication_id as id,
+                medicine_name as name,
+                next_time as frequency
+            FROM medications
+            WHERE patient_id = ?
         """, (patient_id,))
         
         rows = cursor.fetchall()
@@ -258,10 +237,7 @@ def get_patient_medications(patient_id):
             medications.append({
                 "id": row["id"],
                 "name": row["name"],
-                "dosage": row["dosage"],
-                "frequency": row["frequency"],
-                "side_effects": row["side_effects"],
-                "instructions": row["instructions"]
+                "frequency": row["frequency"]
             })
         
         conn.close()
@@ -302,7 +278,7 @@ def get_patient_alerts(patient_id):
         cursor = conn.cursor()
         
         # Check if patient exists
-        cursor.execute("SELECT id, name FROM patients WHERE id = ?", (patient_id,))
+        cursor.execute("SELECT patient_id, first_name, last_name FROM patients WHERE patient_id = ?", (patient_id,))
         patient = cursor.fetchone()
         
         if not patient:
@@ -315,14 +291,11 @@ def get_patient_alerts(patient_id):
         # Build query
         query = """
             SELECT 
-                id,
-                alert_type,
-                severity,
+                alert_id as id,
+                'general' as alert_type,
                 message,
-                timestamp,
-                handled,
-                handled_at,
-                handled_by
+                created_at as timestamp,
+                0 as handled
             FROM alerts
             WHERE patient_id = ?
         """
@@ -330,11 +303,11 @@ def get_patient_alerts(patient_id):
         params = [patient_id]
         
         if status_filter == 'handled':
-            query += " AND handled = 1"
+            query += " AND 0 = 1"  # No handled alerts in this schema
         elif status_filter == 'unhandled':
-            query += " AND handled = 0"
+            query += " AND 1 = 1"  # All alerts are unhandled
         
-        query += " ORDER BY timestamp DESC LIMIT ?"
+        query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         
         cursor.execute(query, params)
@@ -345,12 +318,9 @@ def get_patient_alerts(patient_id):
             alerts.append({
                 "id": row["id"],
                 "alert_type": row["alert_type"],
-                "severity": row["severity"],
                 "message": row["message"],
                 "timestamp": row["timestamp"],
-                "handled": bool(row["handled"]),
-                "handled_at": row["handled_at"],
-                "handled_by": row["handled_by"]
+                "handled": bool(row["handled"])
             })
         
         conn.close()
@@ -358,7 +328,7 @@ def get_patient_alerts(patient_id):
         return jsonify({
             "success": True,
             "patient_id": patient_id,
-            "patient_name": patient["name"],
+            "patient_name": f"{patient['first_name']} {patient['last_name']}",
             "count": len(alerts),
             "alerts": alerts
         })

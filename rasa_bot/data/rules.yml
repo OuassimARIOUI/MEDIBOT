@@ -19,12 +19,12 @@ rules:
     - action: utter_greet
 
 
-# Règle : urgence = réponse immédiate
+# Règle : urgence = réponse immédiate + alerte en base
 
 - rule: urgence toujours prioritaire
   steps:
     - intent: emergency
-    - action: utter_emergency
+    - action: action_trigger_alert
 
 
 # Règle : appeler infirmière
