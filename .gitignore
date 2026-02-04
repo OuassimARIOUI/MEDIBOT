@@ -5,6 +5,8 @@ __pycache__/
 
 # C extensions
 *.so
+/api_server/__pycache__/
+/api_server/frontend/node_modules/
 
 /rasa_bot/.rasa
 /rasa_bot/models
