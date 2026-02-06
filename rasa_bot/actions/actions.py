@@ -227,7 +227,8 @@ class ActionSessionStart(Action):
         # Reset les slots de contexte
         return [
             SlotSet("asked_emergency", False),
-            SlotSet("asked_activity", False)
+            SlotSet("asked_activity", False),
+            SlotSet("emergency_handled", False)
         ]
 
 
@@ -247,6 +248,11 @@ class ActionProposeActivity(Action):
         tracker: Tracker,
         domain: Dict[Text, Any],
     ) -> List[Dict[Text, Any]]:
+
+        # Vérifier si on a déjà posé la question
+        already_asked = tracker.get_slot("asked_activity")
+        if already_asked:
+            return []
 
         dispatcher.utter_message(
             text="Parfait. Souhaitez-vous que je vous chante quelque chose ou préférez-vous discuter ?"
@@ -274,6 +280,18 @@ class ActionAskHelp(Action):
         tracker: Tracker,
         domain: Dict[Text, Any],
     ) -> List[Dict[Text, Any]]:
+
+        # Vérifier si l'urgence a déjà été gérée
+        emergency_handled = tracker.get_slot("emergency_handled")
+        if emergency_handled:
+            # Ne pas redemander, juste écouter
+            return []
+        
+        # Vérifier si on a déjà posé la question
+        already_asked = tracker.get_slot("asked_emergency")
+        if already_asked:
+            # Ne pas redemander
+            return []
 
         dispatcher.utter_message(
             text="Je suis désolé de l'entendre. Souhaitez-vous que j'appelle l'équipe d'urgence ?"
@@ -303,7 +321,9 @@ class ActionHandleAffirm(Action):
     ) -> List[Dict[Text, Any]]:
 
         asked_emergency = tracker.get_slot("asked_emergency")
+        asked_activity = tracker.get_slot("asked_activity")
         patient_id = tracker.get_slot("patient_id")
+        patient_name = tracker.get_slot("patient_full_name")
         
         if asked_emergency:
             # Déclencher l'alerte niveau 2
@@ -313,16 +333,35 @@ class ActionHandleAffirm(Action):
             except Exception as e:
                 print(f"[ERREUR ALERT DB] {e}")
             
-            dispatcher.utter_message(
-                text="Je vais chercher quelqu'un tout de suite. Restez calme, je suis là."
-            )
-            # LED rouges sur Pepper (simulation)
-            # ALLeds.fadeRGB("FaceLeds", 255, 0, 0, 1.0)
+            if patient_name:
+                dispatcher.utter_message(
+                    text=f"{patient_name}, je vais chercher quelqu'un tout de suite. Restez calme, je reste près de vous."
+                )
+            else:
+                dispatcher.utter_message(
+                    text="Je vais chercher quelqu'un tout de suite. Restez calme, je reste près de vous."
+                )
+            
+            # Marquer la conversation comme terminée
+            return [
+                SlotSet("asked_emergency", False),
+                SlotSet("asked_activity", False),
+                SlotSet("emergency_handled", True)
+            ]
         
-        return [
-            SlotSet("asked_emergency", False),
-            SlotSet("asked_activity", False)
-        ]
+        elif asked_activity:
+            # Le patient dit oui à activité (chanson/discuter) mais on a besoin de plus de précision
+            dispatcher.utter_message(
+                text="Préférez-vous une chanson ou discuter ?"
+            )
+            return []
+        
+        else:
+            # Contexte inconnu - demander clarification
+            dispatcher.utter_message(
+                text="D'accord. Que puis-je faire pour vous ?"
+            )
+            return []
 
 
 

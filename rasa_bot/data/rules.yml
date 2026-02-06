@@ -84,6 +84,19 @@ rules:
 
 
 # =============================================
+# RÈGLE : Empêcher action après urgence gérée
+# =============================================
+
+- rule: bloquer apres urgence
+  condition:
+    - slot_was_set:
+      - emergency_handled: true
+  steps:
+    - intent: check_feeling_bad
+    - action: utter_goodbye
+
+
+# =============================================
 # RÈGLE : Patient veut chanson
 # =============================================
 
