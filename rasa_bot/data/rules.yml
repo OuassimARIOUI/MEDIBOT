@@ -3,15 +3,30 @@ version: "3.1"
 rules:
 
 
-# Règle : identification patient
+# =============================================
+# RÈGLE : Début de session - Robot parle en premier
+# =============================================
+
+- rule: debut de session robot parle
+  conversation_start: true
+  steps:
+    - action: action_session_start
+
+
+# =============================================
+# RÈGLE : Identification obligatoire
+# =============================================
 
 - rule: identifier le patient
   steps:
     - intent: identify_patient
     - action: action_identify_patient
+    - action: utter_ask_wellbeing
 
 
-# Règle : toujours répondre à une salutation
+# =============================================
+# RÈGLE : Répondre aux salutations
+# =============================================
 
 - rule: repondre au bonjour
   steps:
@@ -19,23 +34,31 @@ rules:
     - action: utter_greet
 
 
-# Règle : urgence = réponse immédiate + alerte en base
+# =============================================
+# RÈGLE : Urgence toujours prioritaire
+# =============================================
 
 - rule: urgence toujours prioritaire
   steps:
     - intent: emergency
     - action: action_trigger_alert
+    - action: utter_emergency
 
 
-# Règle : appeler infirmière
+# =============================================
+# RÈGLE : Appel infirmière
+# =============================================
 
 - rule: appel infirmiere
   steps:
     - intent: ask_nurse
     - action: utter_call_nurse
+    - action: action_trigger_alert
 
 
-# Règle : fallback
+# =============================================
+# RÈGLE : Fallback
+# =============================================
 
 - rule: fallback patient
   steps:

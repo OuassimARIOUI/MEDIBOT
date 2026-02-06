@@ -3,94 +3,145 @@ version: "3.1"
 stories:
 
 
-# Salutation → Identification → Service
+# =============================================
+# FLOW PRINCIPAL - RONDE NOCTURNE
+# =============================================
 
-- story: salutation et identification
+# Le robot entre et demande le nom
+# Patient s'identifie → Robot demande comment ça va
+
+- story: ronde nocturne - identification complete
   steps:
-    - intent: greet
-    - action: utter_greet
+    - action: action_session_start
     - intent: identify_patient
     - action: action_identify_patient
-    - intent: ask_medicine
-    - action: action_get_medicine
+    - action: utter_ask_wellbeing
 
 
-# Identification directe puis demande
+# =============================================
+# PATIENT VA BIEN - BRANCHES
+# =============================================
 
-- story: identification puis medicament
-  steps:
-    - intent: identify_patient
-    - action: action_identify_patient
-    - intent: ask_medicine
-    - action: action_get_medicine
-
-- story: identification puis date sortie
-  steps:
-    - intent: identify_patient
-    - action: action_identify_patient
-    - intent: ask_discharge
-    - action: action_get_discharge
-
-
-# Salutation simple
-
-- story: salutation patient
-  steps:
-    - intent: greet
-    - action: utter_greet
-
-
-# Patient va bien → fin
-
-- story: patient va bien
+# Patient va bien → proposer activité
+- story: patient va bien - proposer activite
   steps:
     - intent: check_feeling_good
+    - action: utter_propose_activity
+
+# Patient choisit chanson
+- story: patient choisit chanson
+  steps:
+    - intent: request_song
+    - action: action_play_song
+    - action: utter_goodbye
+
+# Patient choisit discuter
+- story: patient choisit discuter
+  steps:
+    - intent: request_discussion
+    - action: utter_ask_questions
+
+# Patient refuse tout → bonne nuit
+- story: patient refuse activite
+  steps:
+    - intent: deny
     - action: utter_goodbye
 
 
-# Patient va mal → proposer aide
+# =============================================
+# PATIENT VA MAL - BRANCHES
+# =============================================
 
-- story: patient va mal
+# Patient va mal → proposer appeler urgence
+- story: patient va mal - proposer urgence
   steps:
     - intent: check_feeling_bad
     - action: utter_ask_help
 
+# Patient confirme urgence → alerte niveau 2
+- story: patient confirme urgence
+  steps:
+    - intent: check_feeling_bad
+    - action: utter_ask_help
+    - intent: affirm
+    - action: action_trigger_alert
+    - action: utter_calling_emergency
+
+# Patient refuse urgence → proposer confort
+- story: patient refuse urgence - proposer confort
+  steps:
+    - intent: check_feeling_bad
+    - action: utter_ask_help
+    - intent: deny
+    - action: utter_propose_comfort
+
+# Patient veut blague
+- story: patient veut blague
+  steps:
+    - intent: request_joke
+    - action: action_tell_joke
+    - action: utter_goodbye
+
+# Patient veut musique apaisante après refus urgence
+- story: patient veut musique apaisante
+  steps:
+    - intent: request_song
+    - action: action_play_song
+    - action: utter_goodbye
+
+
+# =============================================
+# QUESTIONS DU PATIENT (pendant discussion)
+# =============================================
 
 # Demande heure
-
 - story: demander heure
   steps:
     - intent: ask_time
     - action: action_get_time
 
-
 # Demande date
-
 - story: demander date
   steps:
     - intent: ask_date
     - action: action_get_date
 
-
 # Demande médicament
-
 - story: demander medicament
   steps:
     - intent: ask_medicine
     - action: action_get_medicine
 
+# Demande date de sortie
+- story: demander date sortie
+  steps:
+    - intent: ask_discharge
+    - action: action_get_discharge
 
-# Demande infirmière
-
+# Demande infirmière (alerte niveau 1)
 - story: appeler infirmiere
   steps:
     - intent: ask_nurse
     - action: utter_call_nurse
+    - action: action_trigger_alert
 
 
-# Urgence directe
+# =============================================
+# URGENCE DIRECTE
+# =============================================
 
-- story: urgence vitale
+- story: urgence vitale directe
   steps:
     - intent: emergency
     - action: action_trigger_alert
+    - action: utter_emergency
+
+
+# =============================================
+# SALUTATION SIMPLE (fallback)
+# =============================================
+
+- story: salutation patient
+  steps:
+    - intent: greet
+    - action: utter_greet

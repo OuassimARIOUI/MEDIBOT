@@ -16,6 +16,43 @@ nlu:
     - coucou
 
 
+# CHOIX D'ACTIVITÉ
+
+- intent: request_song
+  examples: |
+    - chanson
+    - je veux une chanson
+    - chante-moi quelque chose
+    - tu peux me chanter quelque chose
+    - mets de la musique
+    - une chanson s'il te plaît
+    - je voudrais écouter de la musique
+    - oui une chanson
+    - musique
+    - mets-moi une musique apaisante
+
+- intent: request_discussion
+  examples: |
+    - discuter
+    - je veux discuter
+    - parlons
+    - je préfère discuter
+    - oui discutons
+    - j'ai des questions
+    - je voudrais te poser des questions
+    - parler
+
+- intent: request_joke
+  examples: |
+    - blague
+    - raconte-moi une blague
+    - je veux une blague
+    - oui une blague
+    - dis-moi une blague
+    - fais-moi rire
+    - raconte quelque chose de drôle
+
+
 # IDENTIFICATION PATIENT
 # Note: L'action récupère dynamiquement les noms depuis la DB
 # Ces exemples servent uniquement à entraîner l'intent
@@ -180,3 +217,6 @@ nlu:
     - laisse tomber
     - ce n'est pas nécessaire
     - noooo
+    - non je veux juste me reposer
+    - laisse-moi tranquille
+    - je n'ai besoin de rien

@@ -131,15 +131,17 @@ class ActionIdentifyPatient(Action):
                 full_name = f"{db_first} {db_last}"
                 
                 dispatcher.utter_message(
-                    text=f"Bonjour {full_name}, je vous ai identifié. Comment puis-je vous aider ce soir ?"
+                    text=f"Bonjour {full_name}, je vous ai bien identifié."
                 )
                 
                 # Stocker dans les slots (mémoire du bot)
+                # Note: utter_ask_wellbeing sera appelé automatiquement après
                 return [
                     SlotSet("first_name", db_first),
                     SlotSet("last_name", db_last),
                     SlotSet("patient_id", patient_id),
-                    SlotSet("patient_full_name", full_name)
+                    SlotSet("patient_full_name", full_name),
+                    SlotSet("patient_identified", True)
                 ]
             else:
                 # Aucun patient trouvé
@@ -198,6 +200,108 @@ class ActionGetDischarge(Action):
             )
             print(f"[ERREUR DB DISCHARGE] {e}")
 
+        return []
+
+
+
+# ======================================
+# ACTION : Début de session - Robot parle en premier
+# ======================================
+
+class ActionSessionStart(Action):
+
+    def name(self) -> Text:
+        return "action_session_start"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+
+        # Le robot initie la conversation
+        dispatcher.utter_message(
+            text="Bonsoir, c'est Pepper, je viens prendre soin de vous. Quel est votre nom ?"
+        )
+        return []
+
+
+
+# ======================================
+# ACTION : Jouer une chanson / musique
+# ======================================
+
+class ActionPlaySong(Action):
+
+    def name(self) -> Text:
+        return "action_play_song"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+
+        patient_name = tracker.get_slot("patient_full_name")
+        
+        # Simulation de lecture de musique (LED bleues sur le robot Pepper)
+        if patient_name:
+            dispatcher.utter_message(
+                text=f"🎵 Je mets une musique apaisante pour vous, {patient_name}. Détendez-vous..."
+            )
+        else:
+            dispatcher.utter_message(
+                text="🎵 Je mets une musique apaisante. Détendez-vous..."
+            )
+        
+        # Ici on pourrait déclencher le behavior musique sur Pepper
+        # via une API REST ou NAOqi
+        
+        return []
+
+
+
+# ======================================
+# ACTION : Raconter une blague
+# ======================================
+
+class ActionTellJoke(Action):
+
+    def name(self) -> Text:
+        return "action_tell_joke"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+
+        import random
+        
+        jokes = [
+            "Pourquoi les plongeurs plongent-ils toujours en arrière ? Parce que sinon, ils tomberaient dans le bateau !",
+            "Qu'est-ce qu'un canif ? Un petit fien !",
+            "Pourquoi les robots ne sont jamais fatigués ? Parce qu'ils font des siestes de recharge !",
+            "Que dit un informaticien quand il s'ennuie ? Je m'octet !",
+            "Qu'est-ce qui est jaune et qui attend ? Jonathan !",
+            "Savez-vous pourquoi les infirmières sont toujours calmes ? Parce qu'elles ont des patients !"
+        ]
+        
+        joke = random.choice(jokes)
+        
+        patient_name = tracker.get_slot("patient_full_name")
+        if patient_name:
+            dispatcher.utter_message(
+                text=f"Voici une blague pour vous, {patient_name} : {joke}"
+            )
+        else:
+            dispatcher.utter_message(
+                text=f"Voici une blague : {joke}"
+            )
+        
         return []
 
 
