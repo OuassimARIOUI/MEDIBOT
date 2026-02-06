@@ -6,7 +6,7 @@ from datetime import datetime
 from utils.mail_service import send_alert_notification
 
 
-# Create Blueprint
+# Create Blueprint.
 alerts_bp = Blueprint('alerts', __name__)
 
 
