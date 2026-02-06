@@ -3,94 +3,211 @@ version: "3.1"
 stories:
 
 
-# Salutation → Identification → Service
+# =============================================
+# FLOW COMPLET - RONDE NOCTURNE (EXEMPLES)
+# =============================================
 
-- story: salutation et identification
+# Flow complet : identification → ça va → chanson → fin
+- story: flow complet - patient va bien chanson
   steps:
-    - intent: greet
-    - action: utter_greet
+    - action: action_session_start
     - intent: identify_patient
     - action: action_identify_patient
+    - action: utter_ask_wellbeing
+    - intent: check_feeling_good
+    - action: action_propose_activity
+    - intent: request_song
+    - action: action_play_song
+    - action: utter_goodbye
+
+
+# Flow complet : identification → ça va → discuter → questions
+- story: flow complet - patient va bien discuter
+  steps:
+    - action: action_session_start
+    - intent: identify_patient
+    - action: action_identify_patient
+    - action: utter_ask_wellbeing
+    - intent: check_feeling_good
+    - action: action_propose_activity
+    - intent: request_discussion
+    - action: utter_ask_questions
+    - intent: ask_time
+    - action: action_get_time
+
+
+# Flow complet : identification → ça va → non merci
+- story: flow complet - patient va bien refuse
+  steps:
+    - action: action_session_start
+    - intent: identify_patient
+    - action: action_identify_patient
+    - action: utter_ask_wellbeing
+    - intent: check_feeling_good
+    - action: action_propose_activity
+    - intent: deny
+    - action: action_handle_deny
+
+
+# Flow complet : identification → ça ne va pas → oui urgence
+- story: flow complet - patient va mal urgence
+  steps:
+    - action: action_session_start
+    - intent: identify_patient
+    - action: action_identify_patient
+    - action: utter_ask_wellbeing
+    - intent: check_feeling_bad
+    - action: action_ask_help
+    - intent: affirm
+    - action: action_handle_affirm
+
+
+# Flow complet : identification → ça ne va pas → non → blague
+- story: flow complet - patient va mal blague
+  steps:
+    - action: action_session_start
+    - intent: identify_patient
+    - action: action_identify_patient
+    - action: utter_ask_wellbeing
+    - intent: check_feeling_bad
+    - action: action_ask_help
+    - intent: deny
+    - action: action_handle_deny
+    - intent: request_joke
+    - action: action_tell_joke
+    - action: utter_goodbye
+
+
+# Flow complet : identification → ça ne va pas → non → musique
+- story: flow complet - patient va mal musique
+  steps:
+    - action: action_session_start
+    - intent: identify_patient
+    - action: action_identify_patient
+    - action: utter_ask_wellbeing
+    - intent: check_feeling_bad
+    - action: action_ask_help
+    - intent: deny
+    - action: action_handle_deny
+    - intent: request_song
+    - action: action_play_song
+    - action: utter_goodbye
+
+
+# Flow : patient refuse confort → bonne nuit
+- story: flow patient refuse confort
+  steps:
+    - action: action_handle_deny
+    - intent: deny
+    - action: action_handle_deny
+
+
+# =============================================
+# STORIES COURTES POUR APPRENTISSAGE CONTEXTUEL
+# =============================================
+
+# Après proposition activité → refus → bonne nuit
+- story: court - refuse activite
+  steps:
+    - action: action_propose_activity
+    - intent: deny
+    - action: action_handle_deny
+
+# Après proposition activité → chanson
+- story: court - choisit chanson
+  steps:
+    - action: action_propose_activity
+    - intent: request_song
+    - action: action_play_song
+    - action: utter_goodbye
+
+# Après proposition activité → discuter
+- story: court - choisit discuter
+  steps:
+    - action: action_propose_activity
+    - intent: request_discussion
+    - action: utter_ask_questions
+
+# Après demande aide → oui urgence
+- story: court - confirme urgence
+  steps:
+    - action: action_ask_help
+    - intent: affirm
+    - action: action_handle_affirm
+
+# Après demande aide → non → confort
+- story: court - refuse urgence confort
+  steps:
+    - action: action_ask_help
+    - intent: deny
+    - action: action_handle_deny
+
+# Après proposition confort → blague
+- story: court - choisit blague
+  steps:
+    - action: action_handle_deny
+    - intent: request_joke
+    - action: action_tell_joke
+    - action: utter_goodbye
+
+# Après proposition confort → musique
+- story: court - choisit musique confort
+  steps:
+    - action: action_handle_deny
+    - intent: request_song
+    - action: action_play_song
+    - action: utter_goodbye
+
+
+# =============================================
+# EXEMPLES DE QUESTIONS DU PATIENT
+# =============================================
+
+- story: discussion puis question date
+  steps:
+    - intent: request_discussion
+    - action: utter_ask_questions
+    - intent: ask_date
+    - action: action_get_date
+
+
+- story: discussion puis question medicament
+  steps:
+    - intent: request_discussion
+    - action: utter_ask_questions
     - intent: ask_medicine
     - action: action_get_medicine
 
 
-# Identification directe puis demande
-
-- story: identification puis medicament
+- story: discussion puis question sortie
   steps:
-    - intent: identify_patient
-    - action: action_identify_patient
-    - intent: ask_medicine
-    - action: action_get_medicine
-
-- story: identification puis date sortie
-  steps:
-    - intent: identify_patient
-    - action: action_identify_patient
+    - intent: request_discussion
+    - action: utter_ask_questions
     - intent: ask_discharge
     - action: action_get_discharge
 
 
-# Salutation simple
+- story: discussion puis appel infirmiere
+  steps:
+    - intent: request_discussion
+    - action: utter_ask_questions
+    - intent: ask_nurse
+    - action: utter_call_nurse
+    - action: action_trigger_alert
+# =============================================
+
+- story: urgence vitale directe
+  steps:
+    - intent: emergency
+    - action: action_trigger_alert
+    - action: utter_emergency
+
+
+# =============================================
+# SALUTATION SIMPLE (fallback)
+# =============================================
 
 - story: salutation patient
   steps:
     - intent: greet
     - action: utter_greet
-
-
-# Patient va bien → fin
-
-- story: patient va bien
-  steps:
-    - intent: check_feeling_good
-    - action: utter_goodbye
-
-
-# Patient va mal → proposer aide
-
-- story: patient va mal
-  steps:
-    - intent: check_feeling_bad
-    - action: utter_ask_help
-
-
-# Demande heure
-
-- story: demander heure
-  steps:
-    - intent: ask_time
-    - action: action_get_time
-
-
-# Demande date
-
-- story: demander date
-  steps:
-    - intent: ask_date
-    - action: action_get_date
-
-
-# Demande médicament
-
-- story: demander medicament
-  steps:
-    - intent: ask_medicine
-    - action: action_get_medicine
-
-
-# Demande infirmière
-
-- story: appeler infirmiere
-  steps:
-    - intent: ask_nurse
-    - action: utter_call_nurse
-
-
-# Urgence directe
-
-- story: urgence vitale
-  steps:
-    - intent: emergency
-    - action: action_trigger_alert

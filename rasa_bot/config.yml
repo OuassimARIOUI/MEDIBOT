@@ -18,6 +18,8 @@ pipeline:
 
 policies:
 - name: RulePolicy
+  restrict_rules: true
+  check_for_contradictions: true
 - name: MemoizationPolicy
 - name: TEDPolicy
   max_history: 5
