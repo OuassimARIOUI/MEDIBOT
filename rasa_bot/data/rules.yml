@@ -25,6 +25,137 @@ rules:
 
 
 # =============================================
+# RÈGLE : Patient va bien → proposer activité
+# =============================================
+
+- rule: patient va bien proposer activite
+  steps:
+    - intent: check_feeling_good
+    - action: action_propose_activity
+
+
+# =============================================
+# RÈGLE : Patient va mal → proposer aide
+# =============================================
+
+- rule: patient va mal proposer aide
+  steps:
+    - intent: check_feeling_bad
+    - action: action_ask_help
+
+
+# =============================================
+# RÈGLE : Patient dit OUI (contexte urgence)
+# =============================================
+
+- rule: patient confirme urgence
+  condition:
+    - slot_was_set:
+      - asked_emergency: true
+  steps:
+    - intent: affirm
+    - action: action_handle_affirm
+
+
+# =============================================
+# RÈGLE : Patient dit NON (contexte urgence)
+# =============================================
+
+- rule: patient refuse urgence
+  condition:
+    - slot_was_set:
+      - asked_emergency: true
+  steps:
+    - intent: deny
+    - action: action_handle_deny
+
+
+# =============================================
+# RÈGLE : Patient dit NON (contexte activité)
+# =============================================
+
+- rule: patient refuse activite
+  condition:
+    - slot_was_set:
+      - asked_activity: true
+  steps:
+    - intent: deny
+    - action: action_handle_deny
+
+
+# =============================================
+# RÈGLE : Patient veut chanson
+# =============================================
+
+- rule: patient veut chanson
+  steps:
+    - intent: request_song
+    - action: action_play_song
+    - action: utter_goodbye
+
+
+# =============================================
+# RÈGLE : Patient veut discuter
+# =============================================
+
+- rule: patient veut discuter
+  steps:
+    - intent: request_discussion
+    - action: utter_ask_questions
+
+
+# =============================================
+# RÈGLE : Patient veut blague
+# =============================================
+
+- rule: patient veut blague
+  steps:
+    - intent: request_joke
+    - action: action_tell_joke
+    - action: utter_goodbye
+
+
+# =============================================
+# RÈGLE : Demande heure
+# =============================================
+
+- rule: demander heure
+  steps:
+    - intent: ask_time
+    - action: action_get_time
+
+
+# =============================================
+# RÈGLE : Demande date
+# =============================================
+
+- rule: demander date
+  steps:
+    - intent: ask_date
+    - action: action_get_date
+
+
+# =============================================
+# RÈGLE : Demande médicament
+# =============================================
+
+- rule: demander medicament
+  steps:
+    - intent: ask_medicine
+    - action: action_get_medicine
+
+
+# =============================================
+# RÈGLE : Demande date de sortie
+# =============================================
+
+- rule: demander sortie
+  steps:
+    - intent: ask_discharge
+    - action: action_get_discharge
+
+
+# =============================================
 # RÈGLE : Répondre aux salutations
 # =============================================
 

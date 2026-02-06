@@ -57,6 +57,20 @@ slots:
     initial_value: false
     mappings:
       - type: custom
+  
+  asked_emergency:
+    type: bool
+    influence_conversation: true
+    initial_value: false
+    mappings:
+      - type: custom
+  
+  asked_activity:
+    type: bool
+    influence_conversation: true
+    initial_value: false
+    mappings:
+      - type: custom
 
 actions:
   - action_get_time
@@ -68,6 +82,10 @@ actions:
   - action_play_song
   - action_tell_joke
   - action_session_start
+  - action_ask_help
+  - action_propose_activity
+  - action_handle_affirm
+  - action_handle_deny
 
 responses:
 

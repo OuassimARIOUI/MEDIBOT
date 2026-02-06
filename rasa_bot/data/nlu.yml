@@ -92,15 +92,32 @@ nlu:
 - intent: check_feeling_good
   examples: |
     - ça va
+    - ca va
+    - oui ça va
+    - oui ca va
     - je vais bien
     - tout va bien
     - ça va merci
     - je me sens bien
     - aucun problème
+    - très bien
+    - oui très bien
+    - super
+    - nickel
+    - impeccable
+    - je vais très bien
+    - oui je vais bien
+    - bien merci
+    - ça va bien
+    - je suis bien
+    - tout est ok
+    - parfait
 
 - intent: check_feeling_bad
   examples: |
     - ça ne va pas
+    - ca ne va pas
+    - non ça ne va pas
     - je ne me sens pas bien
     - je vais mal
     - j'ai mal
@@ -109,6 +126,13 @@ nlu:
     - je suis inquiet
     - j'ai peur
     - je me sens mal
+    - pas très bien
+    - non pas bien
+    - pas bien du tout
+    - je ne vais pas bien
+    - ça ne va pas du tout
+    - j'ai des douleurs
+    - je souffre
 
 
 # DEMANDE HEURE / DATE
@@ -207,6 +231,24 @@ nlu:
     - ok
     - je veux bien
     - faites-le
+    - oui appelle
+    - oui appelez
+    - oui s'il te plaît
+    - absolument
+    - bien sûr
+    - vas-y
+    - allez-y
+    - oui je veux
+    - oui merci
+    - ouais
+    - ouep
+    - yep
+    - yes
+    - affirmatif
+    - c'est ça
+    - exactement
+    - tout à fait
+    - volontiers
 
 - intent: deny
   examples: |
@@ -220,3 +262,20 @@ nlu:
     - non je veux juste me reposer
     - laisse-moi tranquille
     - je n'ai besoin de rien
+    - non pas la peine
+    - non c'est bon
+    - non ça va aller
+    - pas maintenant
+    - non je ne veux pas
+    - non je veux pas
+    - je refuse
+    - surtout pas
+    - certainement pas
+    - jamais
+    - nope
+    - nan
+    - pas du tout
+    - non non
+    - non laisse
+    - c'est pas la peine
+    - inutile
