@@ -37,7 +37,7 @@ class ActionGetTime(Action):
 
 
 
-# ACTION : Donner la date actuelle
+# ACTION : Donner la date actuelle.
 
 class ActionGetDate(Action):
 
@@ -270,7 +270,7 @@ class ActionGetMedicine(Action):
 
 
 
-# ACTION : Déclencher une alerte (Sprint 01)
+# ACTION : Déclencher une alerte 
 
 class ActionTriggerAlert(Action):
 
