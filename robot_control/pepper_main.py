@@ -13,6 +13,14 @@ import logging
 import threading
 from typing import Optional, Dict, Any, Callable
 from queue import Queue, Empty
+from pathlib import Path
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+
+# Find and load .env from project root
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 # Import robot control modules
 from .pepper_tts import PepperTTS
