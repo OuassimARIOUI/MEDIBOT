@@ -59,7 +59,7 @@ def run_voice_loop():
             print(f"Vous avez dit : {text}")
             send_to_rasa(text)
         else:
-            print("... silence ou bruit non reconn ...")
+            print("... silence ou bruit non reconnu ...")
 
 if __name__ == "__main__":
     try:
