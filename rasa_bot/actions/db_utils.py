@@ -5,7 +5,16 @@ from pathlib import Path
 
 # Chemin absolu vers la base de données
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "database" / "medibot.db"))
+_db_path_env = os.getenv("DB_PATH")
+if _db_path_env:
+    # Si le chemin est relatif, le résoudre par rapport à BASE_DIR
+    _db_path = Path(_db_path_env)
+    if not _db_path.is_absolute():
+        DB_PATH = str(BASE_DIR / _db_path)
+    else:
+        DB_PATH = str(_db_path)
+else:
+    DB_PATH = str(BASE_DIR / "database" / "medibot.db")
 
 
 def get_connection():

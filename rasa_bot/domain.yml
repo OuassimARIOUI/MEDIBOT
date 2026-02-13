@@ -15,6 +15,9 @@ intents:
   - affirm
   - deny
   - fallback
+  - request_song
+  - request_discussion
+  - request_joke
 
 entities:
   - first_name
@@ -47,6 +50,34 @@ slots:
     influence_conversation: false
     mappings:
       - type: custom
+  
+  patient_identified:
+    type: bool
+    influence_conversation: true
+    initial_value: false
+    mappings:
+      - type: custom
+  
+  asked_emergency:
+    type: bool
+    influence_conversation: true
+    initial_value: false
+    mappings:
+      - type: custom
+  
+  asked_activity:
+    type: bool
+    influence_conversation: true
+    initial_value: false
+    mappings:
+      - type: custom
+  
+  emergency_handled:
+    type: bool
+    influence_conversation: true
+    initial_value: false
+    mappings:
+      - type: custom
 
 actions:
   - action_get_time
@@ -55,10 +86,21 @@ actions:
   - action_get_discharge
   - action_trigger_alert
   - action_identify_patient
+  - action_play_song
+  - action_tell_joke
+  - action_session_start
+  - action_ask_help
+  - action_propose_activity
+  - action_handle_affirm
+  - action_handle_deny
 
 responses:
 
- 
+  # DÉBUT DE RONDE - SALUTATION INITIALE DU ROBOT
+  
+  utter_greet_initial:
+    - text: "Bonsoir, c'est Pepper, je viens prendre soin de vous. Quel est votre nom ?"
+  
   # SALUTATION
   
   utter_greet:
@@ -70,6 +112,19 @@ responses:
   utter_not_identified:
     - text: "Je ne vous ai pas encore identifié. Dites-moi votre nom et prénom, s'il vous plaît."
 
+  # APRÈS IDENTIFICATION - DEMANDER COMMENT VA LE PATIENT
+  
+  utter_ask_wellbeing:
+    - text: "Parfait ! Est-ce que vous allez bien ?"
+
+  # PATIENT VA BIEN - PROPOSER CHANSON OU DISCUSSION
+  
+  utter_propose_activity:
+    - text: "Parfait. Souhaitez-vous que je vous chante quelque chose ou préférez-vous discuter ?"
+
+  utter_ask_questions:
+    - text: "Avez-vous des questions à me poser ?"
+
   
   # FIN / REPOS
   
@@ -80,7 +135,13 @@ responses:
   # PATIENT VA MAL
   
   utter_ask_help:
-    - text: "Je suis désolé de l'entendre. Souhaitez-vous que j'appelle une infirmière ?"
+    - text: "Je suis désolé de l'entendre. Souhaitez-vous que j'appelle l'équipe d'urgence ?"
+
+  utter_calling_emergency:
+    - text: "Je vais chercher quelqu'un tout de suite. Restez calme, je suis là."
+
+  utter_propose_comfort:
+    - text: "Souhaitez-vous que je vous raconte une blague ou que je vous mette une musique apaisante ?"
 
   
   # HEURE / DATE (temporaire texte)
@@ -109,6 +170,11 @@ responses:
 
   utter_emergency:
     - text: "C'est noté. Je vais chercher de l'aide tout de suite. Restez calme, je suis là."
+
+  # PAS DE RÉPONSE
+
+  utter_no_response:
+    - text: "Je n'ai pas entendu de réponse, tout va bien ?"
 
   # FALLBACK
 
