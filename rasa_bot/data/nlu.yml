@@ -254,7 +254,24 @@ nlu:
     - URGENT
     - SOS
 
+# APPEL INFIRMIERE (non urgent)
 
+- intent: call_nurse
+  examples: |
+    - appelle quelqu'un
+    - appelle une infirmière
+    - appelle moi quelqu'un
+    - appelle-moi une infirmière
+    - j'ai besoin de voir quelqu'un
+    - je voudrais parler à quelqu'un
+    - est-ce qu'une infirmière peut venir
+    - quelqu'un peut venir s'il vous plaît
+    - j'ai besoin d'aide
+    - peux-tu appeler l'infirmière
+    - pourrais-tu prévenir le personnel
+    - j'aurais besoin d'assistance
+    - peut-on venir me voir
+    - je veux voir une infirmière
 
 # CONFIRMATION / REFUS
 

@@ -12,6 +12,7 @@ intents:
   - ask_discharge
   - ask_nurse
   - emergency
+  - call_nurse
   - affirm
   - deny
   - fallback
@@ -85,6 +86,7 @@ actions:
   - action_get_medicine
   - action_get_discharge
   - action_trigger_alert
+  - action_call_nurse
   - action_identify_patient
   - action_play_song
   - action_tell_joke

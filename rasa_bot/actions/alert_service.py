@@ -48,7 +48,8 @@ def get_patient_info(patient_id: str) -> Optional[Dict[str, str]]:
     return None
 
 
-def save_alert_to_db(patient_id: str, room_number: str, patient_name: str, message: str) -> int:
+def save_alert_to_db(patient_id: str, room_number: str, patient_name: str, message: str, 
+                     alert_type: str = "general", severity: str = "medium") -> int:
     """
     Enregistre l'alerte dans la base de données locale.
     
@@ -57,6 +58,8 @@ def save_alert_to_db(patient_id: str, room_number: str, patient_name: str, messa
         room_number: Numéro de chambre
         patient_name: Nom complet du patient
         message: Message d'urgence
+        alert_type: Type d'alerte (general, emergency, call, etc.)
+        severity: Niveau de sévérité (low, medium, high)
         
     Returns:
         L'ID de l'alerte créée
@@ -67,9 +70,9 @@ def save_alert_to_db(patient_id: str, room_number: str, patient_name: str, messa
     alert_message = f"URGENCE - Chambre {room_number} - {patient_name}: {message}"
     
     cursor.execute("""
-        INSERT INTO alerts (patient_id, message)
-        VALUES (?, ?)
-    """, (patient_id, alert_message))
+        INSERT INTO alerts (patient_id, message, alert_type, severity)
+        VALUES (?, ?, ?, ?)
+    """, (patient_id, alert_message, alert_type, severity))
     
     alert_id = cursor.lastrowid
     conn.commit()
@@ -141,7 +144,8 @@ def send_alert_to_dashboard(
 def trigger_emergency_alert(
     patient_id: str,
     message: str,
-    user_message: str = ""
+    user_message: str = "",
+    severity: str = "high"
 ) -> Dict[str, any]:
     """
     Fonction principale pour déclencher une alerte d'urgence.
@@ -151,6 +155,7 @@ def trigger_emergency_alert(
         patient_id: L'identifiant du patient
         message: Le message d'alerte à envoyer
         user_message: Le message original du patient (optionnel)
+        severity: Niveau de sévérité (low, medium, high)
         
     Returns:
         Dictionnaire avec le statut de l'alerte et les détails
@@ -174,7 +179,10 @@ def trigger_emergency_alert(
         full_message = f"{message} - Patient dit: '{user_message}'"
     
     # 1. Sauvegarder l'alerte dans la base de données locale
-    alert_id = save_alert_to_db(patient_id, room_number, patient_name, full_message)
+    alert_id = save_alert_to_db(
+        patient_id, room_number, patient_name, full_message,
+        alert_type="emergency", severity=severity
+    )
     
     # 2. Envoyer l'alerte au dashboard Flask
     dashboard_success = send_alert_to_dashboard(
@@ -217,8 +225,11 @@ def trigger_nurse_call(patient_id: str, reason: str = "Demande d'assistance") ->
     patient_name = f"{patient_info['first_name']} {patient_info['last_name']}"
     room_number = patient_info['room_number']
     
-    # Sauvegarder dans la DB
-    alert_id = save_alert_to_db(patient_id, room_number, patient_name, reason)
+    # Sauvegarder dans la DB avec severity "low" (bleu)
+    alert_id = save_alert_to_db(
+        patient_id, room_number, patient_name, reason,
+        alert_type="call", severity="low"
+    )
     
     # Envoyer au dashboard avec type "APPEL_INFIRMIERE"
     dashboard_success = send_alert_to_dashboard(

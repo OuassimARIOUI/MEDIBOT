@@ -190,6 +190,16 @@ rules:
 
 
 # =============================================
+# RÈGLE : Appeler quelqu'un (non urgent)
+# =============================================
+
+- rule: appeler quelqu'un non urgent
+  steps:
+    - intent: call_nurse
+    - action: action_call_nurse
+
+
+# =============================================
 # RÈGLE : Appel infirmière
 # =============================================
 

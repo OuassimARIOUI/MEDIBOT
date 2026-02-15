@@ -50,13 +50,13 @@ def get_all_alerts():
             SELECT 
                 a.alert_id as id,
                 a.patient_id,
-                'general' as alert_type,
-                'medium' as severity,
+                COALESCE(a.alert_type, 'general') as alert_type,
+                COALESCE(a.severity, 'medium') as severity,
                 a.message,
                 a.created_at as timestamp,
-                0 as handled,
-                NULL as handled_at,
-                NULL as handled_by,
+                a.handled,
+                a.handled_at,
+                a.handled_by,
                 p.first_name || ' ' || p.last_name as patient_name,
                 p.room_number,
                 p.age
@@ -67,11 +67,11 @@ def get_all_alerts():
         
         params = []
         
-        # Apply status filter (all alerts are unhandled in this schema)
+        # Apply status filter
         if status_filter == 'handled':
-            query += " AND 0 = 1"  # No handled alerts
+            query += " AND a.handled = 1"
         elif status_filter == 'unhandled':
-            query += " AND 1 = 1"  # All alerts
+            query += " AND a.handled = 0"
         
         # Order by timestamp (most recent first)
         query += " ORDER BY a.created_at DESC LIMIT ?"
@@ -132,8 +132,8 @@ def get_unhandled_alerts():
             SELECT 
                 a.alert_id as id,
                 a.patient_id,
-                'general' as alert_type,
-                'medium' as severity,
+                COALESCE(a.alert_type, 'general') as alert_type,
+                COALESCE(a.severity, 'medium') as severity,
                 a.message,
                 a.created_at as timestamp,
                 p.first_name || ' ' || p.last_name as patient_name,
@@ -141,7 +141,7 @@ def get_unhandled_alerts():
                 p.age
             FROM alerts a
             LEFT JOIN patients p ON a.patient_id = p.patient_id
-            WHERE 1=1
+            WHERE a.handled = 0
             ORDER BY a.created_at DESC
         """
         
@@ -211,8 +211,14 @@ def acknowledge_alert(alert_id):
                 "error": "Alert not found"
             }), 404
         
-        # Delete the alert (simulating acknowledgment)
-        cursor.execute("DELETE FROM alerts WHERE alert_id = ?", (alert_id,))
+        # Mark alert as handled (UPDATE instead of DELETE)
+        cursor.execute("""
+            UPDATE alerts 
+            SET handled = 1, 
+                handled_at = datetime('now'), 
+                handled_by = ?
+            WHERE alert_id = ?
+        """, (handled_by, alert_id))
         
         conn.commit()
         conn.close()

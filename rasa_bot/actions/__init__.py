@@ -24,6 +24,7 @@ try:
         ActionTellJoke,
         ActionGetMedicine,
         ActionTriggerAlert,
+        ActionCallNurse,
     )
     
     __all__ = [
@@ -42,6 +43,7 @@ try:
         "ActionTellJoke",
         "ActionGetMedicine",
         "ActionTriggerAlert",
+        "ActionCallNurse",
     ]
 except ImportError as e:
     # Ne pas bloquer si import échoue (Rasa SDK charge directement actions.py)

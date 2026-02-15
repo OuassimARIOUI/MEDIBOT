@@ -16,7 +16,7 @@ try:
         get_patient_discharge_date,
         get_all_patients
     )
-    from alert_service import trigger_emergency_alert
+    from alert_service import trigger_emergency_alert, trigger_nurse_call
 except ImportError:
     # Fallback pour imports relatifs
     from .db_utils import (
@@ -27,7 +27,7 @@ except ImportError:
         get_patient_discharge_date,
         get_all_patients
     )
-    from .alert_service import trigger_emergency_alert
+    from .alert_service import trigger_emergency_alert, trigger_nurse_call
 
 
 # =================================================
@@ -732,6 +732,86 @@ class ActionTriggerAlert(Action):
             except:
                 dispatcher.utter_message(
                     text="Problème technique. Appelez directement l'infirmière."
+                )
+
+        return []
+
+
+# ACTION : Appeler une infirmière (non urgent)
+
+class ActionCallNurse(Action):
+    """
+    Action pour appeler une infirmière de manière non urgente.
+    Déclenche une alerte de niveau BAS (severity: low) avec bordure bleue.
+    """
+
+    def name(self) -> Text:
+        return "action_call_nurse"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+
+        user_message = tracker.latest_message.get("text")
+        
+        # Récupérer le patient_id depuis les slots (si identifié)
+        patient_id = tracker.get_slot("patient_id")
+        patient_name = tracker.get_slot("patient_full_name")
+        
+        if not patient_id:
+            # Patient non identifié, utiliser l'ancienne méthode
+            print("[APPEL] Patient non identifié, alerte basique envoyée")
+            try:
+                insert_alert(message=user_message, patient_id="UNKNOWN")
+                dispatcher.utter_message(
+                    text="J'ai prévenu l'infirmière. Quelqu'un viendra vous voir bientôt."
+                )
+            except Exception as e:
+                print(f"[ERREUR APPEL DB] {e}")
+                dispatcher.utter_message(
+                    text="Désolé, je n'ai pas pu enregistrer l'appel. Appuyez sur le bouton d'appel dans votre chambre."
+                )
+            return []
+
+        # Patient identifié, utiliser le service complet
+        try:
+            result = trigger_nurse_call(
+                patient_id=patient_id,
+                reason=f"Demande d'assistance - {user_message}"
+            )
+            
+            if result["success"]:
+                print(f"[APPEL] ✅ Envoyé pour {result['patient_name']} - Chambre {result['room_number']}")
+                print(f"[APPEL] Dashboard: {'✅ Envoyé' if result['dashboard_sent'] else '❌ Échec'}")
+                
+                dispatcher.utter_message(
+                    text=f"Très bien {patient_name.split()[0]}, j'ai prévenu l'infirmière. Quelqu'un passera vous voir dès que possible."
+                )
+            else:
+                print(f"[APPEL] ❌ Échec: {result.get('error')}")
+                dispatcher.utter_message(
+                    text="Une erreur s'est produite, mais j'ai enregistré votre demande."
+                )
+                # Fallback sur insert_alert
+                insert_alert(message=user_message, patient_id=patient_id)
+                
+        except Exception as e:
+            print(f"[ERREUR APPEL SYSTÈME] {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback : au moins enregistrer dans la DB
+            try:
+                insert_alert(message=user_message, patient_id=patient_id)
+                dispatcher.utter_message(
+                    text="J'ai enregistré votre demande. Quelqu'un viendra vous voir."
+                )
+            except:
+                dispatcher.utter_message(
+                    text="Problème technique. Utilisez le bouton d'appel dans votre chambre."
                 )
 
         return []

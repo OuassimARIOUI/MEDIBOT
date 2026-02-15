@@ -28,7 +28,12 @@ CREATE TABLE IF NOT EXISTS alerts (
     alert_id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id TEXT,
     message TEXT,
+    alert_type TEXT DEFAULT 'general',
+    severity TEXT DEFAULT 'medium',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    handled INTEGER DEFAULT 0,
+    handled_at DATETIME,
+    handled_by TEXT,
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
 );
 

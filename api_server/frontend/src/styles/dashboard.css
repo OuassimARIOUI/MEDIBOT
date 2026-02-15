@@ -20,6 +20,7 @@
   --primary-color: #2563eb;
   --secondary-color: #0ea5e9;
   --success-color: #10b981;
+  --info-color: #3b82f6;
   --warning-color: #f59e0b;
   --danger-color: #ef4444;
   --critical-color: #dc2626;
@@ -382,7 +383,8 @@ body {
 }
 
 .alert-card.severity-low {
-  border-left-color: var(--success-color);
+  border-left-color: var(--info-color);
+  background-color: #eff6ff;
 }
 
 .alert-header {
@@ -435,7 +437,7 @@ body {
 }
 
 .severity-badge.severity-low {
-  background-color: var(--success-color);
+  background-color: var(--info-color);
   color: white;
 }
 
