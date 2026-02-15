@@ -76,6 +76,41 @@ nlu:
     - asmaa boukraa
     - je suis ouassim arioui
     - je suis asmaa boukraa
+    - je suis wasim
+    - je suis wassim
+    - je suis ouaassim
+    - je suis wasim arioui
+    - je suis wassim arioui
+    - je suis ouaassim arioui
+    - mon nom est wasim
+    - mon nom est wassim
+    - mon nom est ouassim
+    - je m'appelle wasim
+    - je m'appelle wassim
+    - je m'appelle ouassim
+    - je m'appelle ouaassim
+    - c'est wasim
+    - c'est wassim
+    - c'est ouassim
+    - moi c'est wasim
+    - moi c'est wassim
+    - je suis asma
+    - je suis assma
+    - je suis asma boukraa
+    - je suis assma boukraa
+    - mon nom est asma
+    - mon nom est assma
+    - je m'appelle asma
+    - je m'appelle assma
+    - c'est asma
+    - c'est assma
+    - moi c'est asma
+    - moi c'est assma
+    - bonjour je suis wasim
+    - bonjour je suis wassim
+    - bonjour je suis ouassim
+    - bonjour je suis asma
+    - bonjour je suis assma
 
 - intent: goodbye
   examples: |

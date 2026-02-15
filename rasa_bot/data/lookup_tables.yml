@@ -22,3 +22,29 @@ nlu:
     - amoxicilline
     - tramadol
     - codéine
+
+# =================================================
+# LOOKUP TABLE — PRÉNOMS PATIENTS (VARIANTES)
+# =================================================
+# Améliore la reconnaissance des prénoms avec
+# différentes orthographes (transcription Whisper)
+# =================================================
+
+- lookup: first_name
+  examples: |
+    - ouassim
+    - wassim
+    - wasim
+    - ouaassim
+    - asmaa
+    - asma
+    - assma
+    - pierre
+    - marie
+    - jean
+    - sophie
+    - paul
+    - laurent
+    - claire
+    - ahmed
+    - fatima

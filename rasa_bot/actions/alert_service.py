@@ -4,7 +4,12 @@ import json
 from datetime import datetime
 from typing import Optional, Dict
 import os
-from .db_utils import get_connection
+
+# Import absolu pour compatibilité avec Rasa SDK
+try:
+    from db_utils import get_connection
+except ImportError:
+    from .db_utils import get_connection
 
 
 # URL du dashboard Flask (à configurer)

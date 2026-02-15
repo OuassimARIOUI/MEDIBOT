@@ -6,15 +6,62 @@ from rasa_sdk import Action, Tracker
 from rasa_sdk.executor import CollectingDispatcher
 from rasa_sdk.events import SlotSet
 
-from actions.db_utils import (
-    get_medicine_next_time,
-    insert_alert,
-    get_patient_by_name,
-    get_patient_medicines,
-    get_patient_discharge_date,
-    get_all_patients
-)
+# Import absolu pour compatibilité avec Rasa SDK
+try:
+    from db_utils import (
+        get_medicine_next_time,
+        insert_alert,
+        get_patient_by_name,
+        get_patient_medicines,
+        get_patient_discharge_date,
+        get_all_patients
+    )
+    from alert_service import trigger_emergency_alert
+except ImportError:
+    # Fallback pour imports relatifs
+    from .db_utils import (
+        get_medicine_next_time,
+        insert_alert,
+        get_patient_by_name,
+        get_patient_medicines,
+        get_patient_discharge_date,
+        get_all_patients
+    )
+    from .alert_service import trigger_emergency_alert
 
+
+# =================================================
+# DICTIONNAIRE DE NORMALISATION DES PRÉNOMS
+# =================================================
+# Gère les différentes transcriptions Whisper
+# Toutes les variantes sont mappées vers le prénom officiel
+# =================================================
+
+PRENOM_SYNONYMS = {
+    # Variantes de Ouassim
+    "wasim": "ouassim",
+    "wassim": "ouassim",
+    "ouassim": "ouassim",
+    "ouaassim": "ouassim",
+    
+    # Variantes de Asmaa
+    "asma": "asmaa",
+    "assma": "asmaa",
+    "asmaa": "asmaa",
+}
+
+def normalize_name(name: str) -> str:
+    """
+    Normalise un prénom en convertissant les variantes vers le nom officiel.
+    
+    Args:
+        name: Le prénom à normaliser (peut être une variante)
+    
+    Returns:
+        Le prénom normalisé (ou le nom original si pas de correspondance)
+    """
+    name_lower = name.lower().strip()
+    return PRENOM_SYNONYMS.get(name_lower, name_lower)
 
 
 # ACTION : Donner l'heure actuelle
@@ -75,31 +122,39 @@ class ActionIdentifyPatient(Action):
         # Récupérer le message de l'utilisateur
         user_message = tracker.latest_message.get('text', '').lower()
         
-        # Nettoyer le message (enlever les phrases d'intro)
+        # Nettoyer le message (enlever les phrases d'intro et mots courants)
         patterns_to_remove = [
-            r"^je suis ",
-            r"^je m'appelle ",
-            r"^mon nom est ",
-            r"^c'est ",
-            r"^moi c'est ",
-            r"^bonjour je suis ",
-            r"^bonsoir je suis ",
-            r"monsieur ",
-            r"madame ",
+            r"^bonjour\s*,?\s*",      # "bonjour" ou "bonjour,"
+            r"^bonsoir\s*,?\s*",      # "bonsoir" ou "bonsoir,"
+            r"^salut\s*,?\s*",        # "salut" ou "salut,"
+            r"^je suis\s+",
+            r"^je m'appelle\s+",
+            r"^mon nom est\s+",
+            r"^c'est\s+",
+            r"^moi c'est\s+",
+            r"\s*monsieur\s*",
+            r"\s*madame\s*",
+            r"\.$",                    # Point final
+            r"\s+$",                   # Espaces de fin
         ]
         
         cleaned_message = user_message
         for pattern in patterns_to_remove:
             cleaned_message = re.sub(pattern, '', cleaned_message, flags=re.IGNORECASE)
         
-        # Extraire les mots (potentiellement prénom et nom)
-        words = cleaned_message.strip().split()
+        cleaned_message = cleaned_message.strip()
         
-        if len(words) < 2:
+        # Extraire les mots
+        words = [w.strip() for w in cleaned_message.split() if w.strip()]
+        
+        if len(words) < 1:
             dispatcher.utter_message(
-                text="Je n'ai pas bien compris. Dites-moi votre prénom et nom, s'il vous plaît."
+                text="Je n'ai pas bien compris. Dites-moi votre prénom, s'il vous plaît."
             )
             return []
+        
+        print(f"[IDENTIFICATION] Message nettoyé: '{cleaned_message}'")
+        print(f"[IDENTIFICATION] Mots extraits: {words}")
 
         try:
             # Récupérer tous les patients de la DB
@@ -111,19 +166,30 @@ class ActionIdentifyPatient(Action):
                 )
                 return []
             
-            # Chercher une correspondance dans la DB
+            # Chercher une correspondance dans la DB (RECHERCHE PAR PRÉNOM)
             found_patient = None
             
             for patient in all_patients:
                 patient_id, db_first, db_last, room, discharge = patient
-                db_first_lower = db_first.lower()
-                db_last_lower = db_last.lower()
                 
-                # Vérifier si le prénom ET le nom sont dans les mots (dans n'importe quel ordre)
-                words_lower = [w.lower() for w in words]
+                # Normaliser le prénom de la DB
+                db_first_normalized = normalize_name(db_first.lower())
                 
-                if db_first_lower in words_lower and db_last_lower in words_lower:
-                    found_patient = (patient_id, db_first, db_last, discharge)
+                print(f"[IDENTIFICATION] Test patient: {db_first} (normalisé: {db_first_normalized})")
+                
+                # Normaliser et tester chaque mot du message
+                for word in words:
+                    word_normalized = normalize_name(word.lower())
+                    
+                    print(f"[IDENTIFICATION]   Comparaison: '{word}' (normalisé: '{word_normalized}') == '{db_first_normalized}' ?")
+                    
+                    # Si un mot correspond au prénom normalisé → TROUVÉ !
+                    if word_normalized == db_first_normalized:
+                        found_patient = (patient_id, db_first, db_last, discharge)
+                        print(f"[IDENTIFICATION] ✅ TROUVÉ: {db_first} {db_last} (ID: {patient_id})")
+                        break
+                
+                if found_patient:
                     break
             
             if found_patient:
@@ -131,11 +197,10 @@ class ActionIdentifyPatient(Action):
                 full_name = f"{db_first} {db_last}"
                 
                 dispatcher.utter_message(
-                    text=f"Bonjour {full_name}, je vous ai bien identifié."
+                    text=f"Parfait ! Je vous ai bien identifié, {full_name}."
                 )
                 
                 # Stocker dans les slots (mémoire du bot)
-                # Note: utter_ask_wellbeing sera appelé automatiquement après
                 return [
                     SlotSet("first_name", db_first),
                     SlotSet("last_name", db_last),
@@ -328,7 +393,7 @@ class ActionHandleAffirm(Action):
         if asked_emergency:
             # Déclencher l'alerte niveau 2
             try:
-                from actions.db_utils import insert_alert
+                from .db_utils import insert_alert
                 insert_alert(message="Urgence vitale potentielle - patient confirme", patient_id=patient_id or "UNKNOWN")
             except Exception as e:
                 print(f"[ERREUR ALERT DB] {e}")
@@ -609,27 +674,64 @@ class ActionTriggerAlert(Action):
         domain: Dict[Text, Any],
     ) -> List[Dict[Text, Any]]:
 
-        message = tracker.latest_message.get("text")
+        user_message = tracker.latest_message.get("text")
         
         # Récupérer le patient_id depuis les slots (si identifié)
         patient_id = tracker.get_slot("patient_id")
-        if not patient_id:
-            patient_id = "UNKNOWN"
-
-        try:
-            insert_alert(message=message, patient_id=patient_id)
-        except Exception as e:
-            print(f"[ERREUR ALERT DB] {e}")
-
-        # Message personnalisé selon identification
         patient_name = tracker.get_slot("patient_full_name")
-        if patient_name:
-            dispatcher.utter_message(
-                text=f"{patient_name}, une alerte a été envoyée. Une infirmière va arriver immédiatement."
+        
+        if not patient_id:
+            # Patient non identifié, utiliser l'ancienne méthode
+            print("[ALERTE] Patient non identifié, alerte basique envoyée")
+            try:
+                insert_alert(message=user_message, patient_id="UNKNOWN")
+                dispatcher.utter_message(
+                    text="Une alerte a été envoyée. Une infirmière va arriver."
+                )
+            except Exception as e:
+                print(f"[ERREUR ALERT DB] {e}")
+                dispatcher.utter_message(
+                    text="Désolé, je n'ai pas pu envoyer l'alerte. Appelez directement l'infirmière."
+                )
+            return []
+
+        # Patient identifié, utiliser le service complet avec notification dashboard
+        try:
+            result = trigger_emergency_alert(
+                patient_id=patient_id,
+                message="ALERTE URGENCE",
+                user_message=user_message
             )
-        else:
-            dispatcher.utter_message(
-                text="Une alerte a été envoyée. Une infirmière va arriver."
-            )
+            
+            if result["success"]:
+                print(f"[ALERTE] ✅ Envoyée pour {result['patient_name']} - Chambre {result['room_number']}")
+                print(f"[ALERTE] Dashboard: {'✅ Envoyé' if result['dashboard_sent'] else '❌ Échec'}")
+                
+                dispatcher.utter_message(
+                    text=f"{patient_name}, une alerte d'urgence a été envoyée au personnel médical. Une infirmière va arriver immédiatement. Restez calme."
+                )
+            else:
+                print(f"[ALERTE] ❌ Échec: {result.get('error')}")
+                dispatcher.utter_message(
+                    text="Une erreur s'est produite. Je vais quand même alerter le personnel."
+                )
+                # Fallback sur insert_alert
+                insert_alert(message=user_message, patient_id=patient_id)
+                
+        except Exception as e:
+            print(f"[ERREUR ALERT SYSTÈME] {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback : au moins enregistrer dans la DB
+            try:
+                insert_alert(message=user_message, patient_id=patient_id)
+                dispatcher.utter_message(
+                    text="Une alerte a été enregistrée. Le personnel médical va arriver."
+                )
+            except:
+                dispatcher.utter_message(
+                    text="Problème technique. Appelez directement l'infirmière."
+                )
 
         return []
