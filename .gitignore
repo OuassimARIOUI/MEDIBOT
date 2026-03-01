@@ -2,14 +2,15 @@
 __pycache__/
 *.py[codz]
 *$py.class
+.pytest_cache/
 
 # C extensions
 *.so
 /api_server/__pycache__/
 /api_server/frontend/node_modules/
 
-/rasa_bot/.rasa
-/rasa_bot/models
+/rasa_bot/.rasa/
+/rasa_bot/models/
 # Distribution / packaging
 .Python
 build/
@@ -64,6 +65,18 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+
+# Bases de données et fichiers de log
+*.db
+*.sqlite3
+*.log
+rasa_bot/medibot_tracker.db
+
+# Fichiers audio temporaires (Whisper)
+*.wav
+stt_whisper/temp_voice.wav
+
+
 
 # Flask stuff:
 instance/
@@ -147,6 +160,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.venv/
+
 
 # Spyder project settings
 .spyderproject
