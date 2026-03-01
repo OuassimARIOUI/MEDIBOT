@@ -2,7 +2,7 @@ import requests
 import datetime
 
 class AlertSystem:
-    def __init__(self, dashboard_url="http://localhost:5000/alerts"):
+    def __init__(self, dashboard_url="http://localhost:5000/api/alerts"):
         self.dashboard_url = dashboard_url
 
     def send_alert(self, level, reason, patient_id="Chambre_102"):
@@ -25,7 +25,8 @@ class AlertSystem:
             response = requests.post(self.dashboard_url, json=payload, timeout=2)
             return response.status_code == 200
         except requests.exceptions.ConnectionError:
-            print("⚠️ Mode dégradé : Dashboard injoignable. Alerte loguée localement.") [cite: 120, 138]
+            # Mode dégradé : Dashboard injoignable. Alerte loguée localement.
+            print("⚠️ Mode dégradé : Dashboard injoignable. Alerte loguée localement.")
             return False
 
 # Exemple d'usage pour vos tests

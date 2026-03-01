@@ -90,7 +90,7 @@ def get_all_patients():
         }), 500
 
 
-@patients_bp.route('/<int:patient_id>', methods=['GET'])
+@patients_bp.route('/<patient_id>', methods=['GET'])
 def get_patient_details(patient_id):
     """
     GET /api/patients/<id>
@@ -197,7 +197,7 @@ def get_patient_details(patient_id):
         }), 500
 
 
-@patients_bp.route('/<int:patient_id>/medications', methods=['GET'])
+@patients_bp.route('/<patient_id>/medications', methods=['GET'])
 def get_patient_medications(patient_id):
     """
     GET /api/patients/<id>/medications
@@ -256,7 +256,7 @@ def get_patient_medications(patient_id):
         }), 500
 
 
-@patients_bp.route('/<int:patient_id>/alerts', methods=['GET'])
+@patients_bp.route('/<patient_id>/alerts', methods=['GET'])
 def get_patient_alerts(patient_id):
     """
     GET /api/patients/<id>/alerts

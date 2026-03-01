@@ -36,12 +36,19 @@ sqlite-utils==3.35.2
 yagmail==0.15.293
 
 # Pepper / NAOqi
-naoqi-sdk==2.5.7
+# Le SDK NAOqi (module qi) doit être installé manuellement depuis SoftBank Robotics.
+# Pour Python 3, installer libqi via : pip install qi
+# Si qi n'est pas disponible via pip, ajouter le chemin du SDK au PYTHONPATH.
+# Voir : https://developer.softbankrobotics.com/
 paramiko==3.4.0
 
 # Reinforcement Learning (Optional)
 stable-baselines3==2.2.1
 gymnasium==0.29.1
+
+# Voice Bridge (local TTS fallback)
+pyttsx3==2.90
+scipy==1.11.4
 
 # Utils / Dev
 loguru==0.7.2

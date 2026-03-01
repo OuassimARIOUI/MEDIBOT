@@ -113,6 +113,69 @@ def get_all_alerts():
         }), 500
 
 
+@alerts_bp.route('', methods=['POST'])
+def create_alert():
+    """
+    POST /api/alerts
+
+    Create a new alert from the robot or alert system.
+
+    Request Body:
+        {
+            "patient_id": "PAT001",
+            "message": "URGENCE - ...",
+            "alert_type": "emergency" | "general" | "call",
+            "severity": "low" | "medium" | "high",
+            "patient_name": "Nom du patient" (optional),
+            "room_number": "203" (optional)
+        }
+
+    Returns:
+        JSON: Success status and created alert ID
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No JSON data provided"}), 400
+
+        patient_id = data.get('patient_id', 'UNKNOWN')
+        message = data.get('message') or data.get('reason', 'Alerte sans message')
+        alert_type = data.get('alert_type', 'general')
+        severity = data.get('severity', 'medium')
+
+        # Support legacy format from emotion_detection/alert_system.py
+        if 'priority' in data:
+            severity = 'high' if data['priority'] >= 2 else 'medium'
+        if 'reason' in data and not data.get('message'):
+            message = data['reason']
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO alerts (patient_id, message, alert_type, severity)
+            VALUES (?, ?, ?, ?)
+        """, (patient_id, message, alert_type, severity))
+
+        alert_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        print(f"✓ Alerte #{alert_id} créée: [{severity.upper()}] {message[:80]}")
+
+        return jsonify({
+            "success": True,
+            "alert_id": alert_id,
+            "message": "Alert created successfully"
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @alerts_bp.route('/unhandled', methods=['GET'])
 def get_unhandled_alerts():
     """
