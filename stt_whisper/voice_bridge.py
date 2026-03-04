@@ -130,6 +130,104 @@ def _speak_pc(text: str) -> None:
 
 
 # ===================================================================
+# AUDIO — LECTURE DE FICHIERS MUSICAUX (WAV)
+# ===================================================================
+
+def play_audio(wav_path: str) -> None:
+    """
+    Joue un fichier WAV instrumental.
+    - Sur Pepper  : ALAudioPlayer (haut-parleur du robot)
+    - Sur PC      : sounddevice ou simpleaudio (haut-parleur du PC)
+    """
+    if not wav_path or not os.path.exists(wav_path):
+        print(f"[AUDIO] ⚠️ Fichier introuvable : {wav_path}")
+        return
+
+    print(f"[AUDIO] 🎵 Lecture : {os.path.basename(wav_path)}")
+
+    if USE_PEPPER:
+        _play_audio_pepper(wav_path)
+    else:
+        _play_audio_pc(wav_path)
+
+
+def _play_audio_pepper(wav_path: str) -> None:
+    """Joue un WAV via ALAudioPlayer de Pepper."""
+    session = _get_pepper_session()
+    if session is None:
+        print("[PEPPER AUDIO] Pas de session NAOqi, fallback PC.")
+        _play_audio_pc(wav_path)
+        return
+    try:
+        audio_player = session.service("ALAudioPlayer")
+        # Pepper a besoin du chemin local sur le robot ou une URL.
+        # On copie le fichier sur Pepper via SCP puis on le joue.
+        remote_path = "/home/nao/medibot_song.wav"
+        import subprocess
+        scp_result = subprocess.run(
+            ["scp", "-o", "StrictHostKeyChecking=no", wav_path,
+             f"nao@{PEPPER_IP}:{remote_path}"],
+            capture_output=True, timeout=10
+        )
+        if scp_result.returncode != 0:
+            print(f"[PEPPER AUDIO] SCP échoué, fallback PC.")
+            _play_audio_pc(wav_path)
+            return
+
+        file_id = audio_player.loadFile(remote_path)
+        audio_player.play(file_id)
+        print(f"[PEPPER AUDIO] 🔊 Robot joue la musique.")
+    except Exception as e:
+        print(f"[PEPPER AUDIO] Erreur ({e}), fallback PC.")
+        global _pepper_session
+        _pepper_session = None
+        _play_audio_pc(wav_path)
+
+
+def _play_audio_pc(wav_path: str) -> None:
+    """Joue un WAV sur les haut-parleurs du PC."""
+    try:
+        import sounddevice as sd
+        from scipy.io.wavfile import read as wavread
+        rate, data = wavread(wav_path)
+        if data.ndim > 1:
+            data = data[:, 0]  # Mono
+        # Convertir en float32 pour sounddevice
+        audio = data.astype(np.float32) / 32768.0
+        sd.play(audio, samplerate=rate)
+        sd.wait()  # Attendre la fin de la lecture
+        print(f"[PC AUDIO] ✅ Lecture terminée.")
+    except ImportError:
+        # Fallback : utiliser le module wave + pyaudio ou autre
+        print("[PC AUDIO] sounddevice non disponible, tentative avec wave...")
+        try:
+            import wave
+            import struct
+            import pyaudio
+            wf = wave.open(wav_path, 'rb')
+            p = pyaudio.PyAudio()
+            stream = p.open(
+                format=p.get_format_from_width(wf.getsampwidth()),
+                channels=wf.getnchannels(),
+                rate=wf.getframerate(),
+                output=True
+            )
+            chunk = 1024
+            data_chunk = wf.readframes(chunk)
+            while data_chunk:
+                stream.write(data_chunk)
+                data_chunk = wf.readframes(chunk)
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+            print(f"[PC AUDIO] ✅ Lecture terminée (pyaudio).")
+        except Exception as e2:
+            print(f"[PC AUDIO] ❌ Impossible de jouer l'audio : {e2}")
+    except Exception as e:
+        print(f"[PC AUDIO] Erreur : {e}")
+
+
+# ===================================================================
 # MIC — ÉCOUTE DU PATIENT
 # ===================================================================
 
@@ -252,13 +350,25 @@ def has_speech(audio_data: np.ndarray, threshold: float = MIN_ENERGY_THRESHOLD) 
 
 
 def send_to_rasa(message: str, max_retries: int = 3) -> None:
-    """Envoie le texte transcrit à Rasa et fait parler le bot avec la réponse."""
+    """Envoie le texte transcrit à Rasa et fait parler le bot avec la réponse.
+    
+    Gère deux types de messages Rasa :
+    - text       → prononcé via TTS (speak)
+    - play_audio → fichier WAV joué via play_audio()
+    """
     payload = {"sender": "user_voice", "message": message}
     for attempt in range(1, max_retries + 1):
         try:
-            response = requests.post(RASA_URL, json=payload, timeout=10)
+            response = requests.post(RASA_URL, json=payload, timeout=30)
             res_json = response.json()
             for msg in res_json:
+                # --- Message audio instrumental ---
+                custom = msg.get('custom') or {}
+                audio_path = custom.get('play_audio')
+                if audio_path:
+                    play_audio(audio_path)
+                    continue
+                # --- Message texte classique ---
                 bot_text = msg.get('text')
                 if bot_text:
                     print(f"MediBot : {bot_text}")

@@ -1,6 +1,7 @@
 from typing import Any, Text, Dict, List
 from datetime import datetime
 import re
+import os
 import threading
 
 from rasa_sdk import Action, Tracker
@@ -519,7 +520,7 @@ class ActionHandleDeny(Action):
 
 
 # ======================================
-# ACTION : Chanter une chanson (voix Pepper + gestes)
+# ACTION : Jouer une chanson instrumentale (WAV) + gestes Pepper
 # ======================================
 
 class ActionPlaySong(Action):
@@ -528,91 +529,63 @@ class ActionPlaySong(Action):
         return "action_play_song"
 
     # ------------------------------------------------------------------
-    # Chansons que Pepper chantera avec sa voix ALTextToSpeech.
-    # "lyrics" = ce que Pepper prononce à voix haute (TTS).
-    # "intro"  = phrase dite AVANT de chanter.
-    # "outro"  = phrase dite APRÈS avoir chanté.
-    # "emotion"= couleur LEDs pendant la chanson.
-    # "gesture"= geste Pepper avant de chanter.
+    # Chansons avec fichiers WAV instrumentaux pré-générés.
+    # "wav"     = nom du fichier dans rasa_bot/actions/songs/
+    # "intro"   = phrase TTS dite AVANT la musique.
+    # "outro"   = phrase TTS dite APRÈS la musique.
+    # "emotion" = couleur LEDs pendant la musique.
+    # "gesture" = geste Pepper avant de jouer.
     # ------------------------------------------------------------------
     SONGS = [
         {
             "title": "Au Clair de la Lune",
             "artist": "Chanson traditionnelle française",
-            "intro": "Je vais vous chanter Au clair de la lune.",
-            "lyrics": (
-                "Au clair de la lune, mon ami Pierrot, "
-                "prête-moi ta plume pour écrire un mot. "
-                "Ma chandelle est morte, je n'ai plus de feu. "
-                "Ouvre-moi ta porte, pour l'amour de Dieu."
-            ),
-            "outro": "J'espère que cette berceuse vous apporte un peu de sérénité.",
+            "wav": "au_clair_de_la_lune.wav",
+            "intro": "Je vais vous jouer Au Clair de la Lune. Écoutez bien !",
+            "outro": "J'espère que cette mélodie vous apporte un peu de sérénité.",
             "emotion": "calm",
             "gesture": "animations/Stand/Emotions/Neutral/Calm_1",
         },
         {
             "title": "Frère Jacques",
             "artist": "Chanson traditionnelle française",
-            "intro": "Voici Frère Jacques, une chanson qui réchauffe le cœur.",
-            "lyrics": (
-                "Frère Jacques, Frère Jacques, "
-                "dormez-vous ? dormez-vous ? "
-                "Sonnez les matines ! Sonnez les matines ! "
-                "Din din don, din din don."
-            ),
-            "outro": "Voilà, je vous souhaite une bonne nuit comme Frère Jacques !",
+            "wav": "frere_jacques.wav",
+            "intro": "Voici Frère Jacques, une mélodie qui réchauffe le cœur !",
+            "outro": "Voilà ! J'espère que cette musique vous a plu.",
             "emotion": "happy",
             "gesture": "animations/Stand/Gestures/Yes_1",
         },
         {
             "title": "La Vie en Rose",
             "artist": "Édith Piaf",
-            "intro": "Je vais interpréter un extrait de La Vie en Rose, d'Édith Piaf.",
-            "lyrics": (
-                "Des yeux qui font baisser les miens, "
-                "un rire qui se perd sur sa bouche, "
-                "voilà le portrait sans retouches "
-                "de l'homme auquel j'appartiens. "
-                "Quand il me prend dans ses bras, "
-                "il me parle tout bas, "
-                "je vois la vie en rose."
-            ),
-            "outro": "Édith Piaf avait une voix magnifique. J'espère avoir rendu hommage à cette belle chanson.",
+            "wav": "la_vie_en_rose.wav",
+            "intro": "Je vais vous jouer La Vie en Rose d'Édith Piaf.",
+            "outro": "Quelle belle mélodie, n'est-ce pas ?",
             "emotion": "happy",
             "gesture": "animations/Stand/Emotions/Positive/Happy_4",
         },
         {
             "title": "Douce France",
             "artist": "Charles Trenet",
-            "intro": "Je vais vous chanter Douce France de Charles Trenet.",
-            "lyrics": (
-                "Douce France, cher pays de mon enfance, "
-                "bercée de tendre insouciance, "
-                "je t'ai gardée dans mon cœur. "
-                "Mon village au clocher, aux maisons fleuries, "
-                "ô douce France."
-            ),
-            "outro": "Une belle chanson pour penser à des souvenirs doux.",
+            "wav": "douce_france.wav",
+            "intro": "Voici Douce France de Charles Trenet.",
+            "outro": "Une belle mélodie pour penser à des souvenirs doux.",
             "emotion": "calm",
             "gesture": "animations/Stand/Emotions/Neutral/Calm_1",
         },
         {
             "title": "Promenons-nous dans les bois",
             "artist": "Chanson traditionnelle française",
-            "intro": "Je vais vous chanter Promenons-nous dans les bois.",
-            "lyrics": (
-                "Promenons-nous dans les bois, "
-                "pendant que le loup n'y est pas. "
-                "Si le loup y était, "
-                "il nous mangerait. "
-                "Mais comme il n'y est pas, "
-                "il nous mangera pas !"
-            ),
-            "outro": "Voilà ! Une chanson pleine de vivacité pour vous redonner le sourire.",
+            "wav": "promenons_nous.wav",
+            "intro": "Je vais vous jouer Promenons-nous dans les bois !",
+            "outro": "Voilà ! Une mélodie pleine de vivacité pour vous redonner le sourire.",
             "emotion": "happy",
             "gesture": "animations/Stand/Gestures/Hey_1",
         },
     ]
+
+    # Chemin vers le dossier des fichiers WAV
+    SONGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "songs")
 
     def run(
         self,
@@ -626,16 +599,17 @@ class ActionPlaySong(Action):
 
         patient_name = tracker.get_slot("patient_full_name")
         song = random.choice(self.SONGS)
+        wav_path = os.path.join(self.SONGS_DIR, song["wav"])
 
         # ------------------------------------------------------------------
-        # 1. Message texte au dashboard / frontend (toujours visible)
+        # 1. Message texte + intro parlée
         # ------------------------------------------------------------------
         first_name = patient_name.split()[0] if patient_name else None
 
         if first_name:
             dispatcher.utter_message(
                 text=(
-                    f"🎵 Très bien {first_name}, je vais vous chanter "
+                    f"🎵 Très bien {first_name}, je vais vous jouer "
                     f"\"{song['title']}\" de {song['artist']}. "
                     f"Installez-vous confortablement..."
                 )
@@ -643,32 +617,43 @@ class ActionPlaySong(Action):
         else:
             dispatcher.utter_message(
                 text=(
-                    f"🎵 Je vais vous chanter \"{song['title']}\" "
+                    f"🎵 Je vais vous jouer \"{song['title']}\" "
                     f"de {song['artist']}. "
                     f"Installez-vous confortablement..."
                 )
             )
 
-        # ------------------------------------------------------------------
-        # Envoyer les paroles via le dispatcher pour que voice_bridge les
-        # prononce (pyttsx3 en mode PC, ALTextToSpeech via voice_bridge
-        # en mode Pepper).  Avant, les paroles n'étaient envoyées que dans
-        # un thread daemon Pepper → le patient en mode PC n'entendait rien.
-        # ------------------------------------------------------------------
+        # Intro parlée (voice_bridge la prononcera via TTS)
         dispatcher.utter_message(text=song["intro"])
-        dispatcher.utter_message(text=song["lyrics"])
+
+        # ------------------------------------------------------------------
+        # 2. Lecture du fichier WAV instrumental
+        #    On envoie un message JSON spécial que voice_bridge intercepte
+        #    pour jouer le fichier audio au lieu de le lire en TTS.
+        # ------------------------------------------------------------------
+        if os.path.exists(wav_path):
+            dispatcher.utter_message(
+                json_message={"play_audio": wav_path}
+            )
+            print(f"[CHANSON] 🎵 Lecture audio : {wav_path}")
+        else:
+            # Fallback : si le WAV n'existe pas, on prévient
+            dispatcher.utter_message(
+                text=f"(Le fichier instrumental n'a pas été trouvé : {song['wav']}. "
+                     f"Lancez 'python scripts/generate_melodies.py' pour le générer.)"
+            )
+            print(f"[CHANSON] ⚠️ Fichier WAV manquant : {wav_path}")
+
+        # Outro parlée
         dispatcher.utter_message(text=song["outro"])
 
         # ------------------------------------------------------------------
-        # 2. Commandes Pepper (TTS + gestes + LEDs) dans un thread daemon
-        # → Non bloquant : Rasa n'attend pas la fin de la chanson (évite timeout)
-        # → Utilise la session qi partagée via singleton pour ne pas créer
-        #   plusieurs connexions concurrentes au robot.
+        # 3. Commandes Pepper (gestes + LEDs) dans un thread daemon
         # ------------------------------------------------------------------
         import threading
 
-        def _play_on_pepper(song_data: dict) -> None:
-            """Exécutée dans un thread daemon — Rasa ne bloque pas."""
+        def _play_on_pepper(song_data: dict, audio_path: str) -> None:
+            """Gestes + LEDs Pepper en arrière-plan (non bloquant)."""
             try:
                 pepper_ip = os.getenv("PEPPER_IP")
                 pepper_port = int(os.getenv("PEPPER_PORT", "9559"))
@@ -676,18 +661,16 @@ class ActionPlaySong(Action):
                 if not pepper_ip:
                     print(f"[CHANSON] Mode simulation – PEPPER_IP non défini.")
                     print(f"[CHANSON] Chanson : {song_data['title']} ({song_data['artist']})")
-                    print(f"[CHANSON] Paroles : {song_data['lyrics']}")
                     return
 
                 import qi
 
-                # Réutiliser ou créer une session unique (singleton de module)
                 session = _get_or_create_pepper_session(pepper_ip, pepper_port)
                 if session is None:
                     print("[CHANSON] Impossible d'obtenir une session Pepper.")
                     return
 
-                # === GESTE : behavior avant de chanter ===
+                # === GESTE avant la musique ===
                 try:
                     behavior_service = session.service("ALBehaviorManager")
                     if behavior_service.isBehaviorInstalled(song_data["gesture"]):
@@ -695,12 +678,10 @@ class ActionPlaySong(Action):
                 except Exception as e:
                     print(f"[CHANSON] Geste non disponible ({e}), poursuite...")
 
-                # === LEDs : format NAOqi = entier hexadécimal + durée ===
-                # IMPORTANT: ALLeds.fadeRGB(name, hexRGB_int, duration_float)
-                # PAS (r, g, b) séparés — ça crashe sur le robot !
+                # === LEDs pendant la musique ===
                 emotion_hex = {
-                    "calm":  0x0066CC,   # Bleu apaisant
-                    "happy": 0x00CC66,   # Vert joyeux
+                    "calm":  0x0066CC,
+                    "happy": 0x00CC66,
                 }
                 hex_color = emotion_hex.get(song_data["emotion"], 0xFFFFFF)
                 try:
@@ -709,21 +690,26 @@ class ActionPlaySong(Action):
                 except Exception as e:
                     print(f"[CHANSON] LEDs non disponibles ({e}), poursuite...")
 
-                # === TTS supprimé du thread daemon ===
-                # Les paroles sont désormais envoyées via dispatcher →
-                # voice_bridge les prononce (PC: pyttsx3 / Pepper: ALTextToSpeech).
-                # Cela évite le double-speak quand voice_bridge est actif.
+                # === Jouer le WAV sur le haut-parleur de Pepper ===
+                try:
+                    audio_player = session.service("ALAudioPlayer")
+                    file_id = audio_player.loadFile(audio_path)
+                    audio_player.play(file_id)
+                    print(f"[CHANSON] 🔊 Pepper joue : {song_data['title']}")
+                except Exception as e:
+                    print(f"[CHANSON] ALAudioPlayer indisponible ({e}), le PC joue la musique.")
+
+                # Attendre que la musique finisse (~20s max)
+                import time as _t
+                _t.sleep(20)
 
                 # LEDs : retour blanc neutre
-                # Attendre un peu pour que les LEDs restent pendant la chanson
-                import time as _t
-                _t.sleep(15)
                 try:
                     leds.fadeRGB("FaceLeds", 0xFFFFFF, 2.0)
                 except Exception:
                     pass
 
-                print(f"[CHANSON] ✅ Pepper a chanté : {song_data['title']}")
+                print(f"[CHANSON] ✅ Musique terminée : {song_data['title']}")
 
             except ImportError:
                 print("[CHANSON] Module 'qi' non disponible – mode simulation PC.")
@@ -732,8 +718,9 @@ class ActionPlaySong(Action):
                 print(f"[CHANSON] Erreur Pepper : {e}")
                 traceback.print_exc()
 
-        # Lancer dans un thread daemon (Rasa répond immédiatement, Pepper chante en arrière-plan)
-        t = threading.Thread(target=_play_on_pepper, args=(song,), daemon=True)
+        t = threading.Thread(
+            target=_play_on_pepper, args=(song, wav_path), daemon=True
+        )
         t.start()
 
         return []
