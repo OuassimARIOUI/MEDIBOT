@@ -265,7 +265,6 @@ nlu:
 
 - intent: call_nurse
   examples: |
-    - appelle quelqu'un
     - appelle une infirmière
     - appelle moi quelqu'un
     - appelle-moi une infirmière
@@ -273,8 +272,6 @@ nlu:
     - je voudrais parler à quelqu'un
     - est-ce qu'une infirmière peut venir
     - quelqu'un peut venir s'il vous plaît
-    - j'ai besoin d'aide
-    - peux-tu appeler l'infirmière
     - pourrais-tu prévenir le personnel
     - j'aurais besoin d'assistance
     - peut-on venir me voir

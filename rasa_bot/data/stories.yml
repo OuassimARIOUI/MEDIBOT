@@ -193,7 +193,7 @@ stories:
     - action: utter_ask_questions
     - intent: ask_nurse
     - action: utter_call_nurse
-    - action: action_trigger_alert
+    - action: action_call_nurse
 # =============================================
 
 - story: urgence vitale directe

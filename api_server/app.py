@@ -104,8 +104,10 @@ if __name__ == '__main__':
     print("="*60 + "\n")
     
     # Run Flask development server
+    # debug=False : évite le rechargeur Werkzeug qui cause de faux "processus terminé"
+    # quand lancé via subprocess (run.py).
     app.run(
         host='0.0.0.0',
         port=5000,
-        debug=True
+        debug=False
     )

@@ -79,22 +79,26 @@ class MediBotLauncher:
         self.is_windows = platform.system() == "Windows"
         self.pepper_controller = None
         self.pepper_connected = False
+        # Dossier de logs pour les sous-processus
+        self.log_dir = self.base_dir / "logs"
+        self.log_dir.mkdir(exist_ok=True)
+        self.log_files = []  # Garder les handles ouverts
         
     def check_dependencies(self):
         """Vérifie que les dépendances sont installées."""
         log("\n🔍 Vérification des dépendances...", Colors.CYAN)
         
         checks = [
-            ("rasa", "rasa --version"),
-            ("node", "node --version"),
-            ("npm", "npm --version"),
+            ("rasa", [sys.executable, "-m", "rasa", "--version"]),
+            ("node", ["node", "--version"]),
+            ("npm", ["npm", "--version"]),
         ]
         
         all_ok = True
         for name, cmd in checks:
             try:
                 result = subprocess.run(
-                    cmd.split(), 
+                    cmd, 
                     capture_output=True, 
                     text=True,
                     shell=self.is_windows
@@ -111,17 +115,26 @@ class MediBotLauncher:
         
         return all_ok
     
+    def _open_log(self, name: str):
+        """Ouvre un fichier de log pour un service et retourne le handle."""
+        log_path = self.log_dir / f"{name.lower().replace(' ', '_')}.log"
+        f = open(log_path, 'w', encoding='utf-8')
+        self.log_files.append(f)
+        log(f"  → Log : logs/{log_path.name}", Colors.DIM)
+        return f
+
     def start_rasa_actions(self):
         """Lance le serveur d'actions Rasa."""
         log_service("Rasa Actions", "Démarrage sur le port 5055...", Colors.YELLOW)
         
-        cmd = ["rasa", "run", "actions"]
+        cmd = [sys.executable, "-m", "rasa", "run", "actions", "--debug"]
         cwd = self.base_dir / "rasa_bot"
+        log_f = self._open_log("rasa_actions")
         
         kwargs = {
             'cwd': cwd,
-            'stdout': subprocess.PIPE,
-            'stderr': subprocess.STDOUT,
+            'stdout': log_f,
+            'stderr': log_f,
         }
         if self.is_windows:
             kwargs['shell'] = True
@@ -131,20 +144,33 @@ class MediBotLauncher:
         
         process = subprocess.Popen(cmd, **kwargs)
         self.processes.append(("Rasa Actions", process))
-        time.sleep(2)
+        time.sleep(3)
+        # Détecter un crash immédiat
+        if process.poll() is not None:
+            log_service("Rasa Actions", f"✗ Crash immédiat (code {process.returncode}) — voir logs/rasa_actions.log", Colors.RED)
+            # Afficher les 10 dernières lignes du log
+            try:
+                log_f.flush()
+                with open(self.log_dir / "rasa_actions.log", 'r', encoding='utf-8', errors='replace') as rf:
+                    lines = rf.readlines()
+                    for line in lines[-10:]:
+                        print(f"  {Colors.RED}{line.rstrip()}{Colors.RESET}")
+            except Exception:
+                pass
         return process
     
     def start_rasa_server(self):
         """Lance le serveur Rasa principal avec API."""
         log_service("Rasa Server", "Démarrage sur le port 5005...", Colors.YELLOW)
         
-        cmd = ["rasa", "run", "--enable-api", "--cors", "*"]
+        cmd = [sys.executable, "-m", "rasa", "run", "--enable-api", "--cors", "*"]
         cwd = self.base_dir / "rasa_bot"
+        log_f = self._open_log("rasa_server")
         
         kwargs = {
             'cwd': cwd,
-            'stdout': subprocess.PIPE,
-            'stderr': subprocess.STDOUT,
+            'stdout': log_f,
+            'stderr': log_f,
         }
         if self.is_windows:
             kwargs['shell'] = True
@@ -163,11 +189,12 @@ class MediBotLauncher:
         
         cmd = [sys.executable, "app.py"]
         cwd = self.base_dir / "api_server"
+        log_f = self._open_log("api_server")
         
         kwargs = {
             'cwd': cwd,
-            'stdout': subprocess.PIPE,
-            'stderr': subprocess.STDOUT,
+            'stdout': log_f,
+            'stderr': log_f,
         }
         if self.is_windows:
             kwargs['shell'] = True
@@ -177,20 +204,106 @@ class MediBotLauncher:
         
         process = subprocess.Popen(cmd, **kwargs)
         self.processes.append(("API Server", process))
-        time.sleep(1)
+        time.sleep(2)
+        if process.poll() is not None:
+            log_service("API Server", f"✗ Crash (code {process.returncode}) — voir logs/api_server.log", Colors.RED)
+            try:
+                log_f.flush()
+                with open(self.log_dir / "api_server.log", 'r', encoding='utf-8', errors='replace') as rf:
+                    lines = rf.readlines()
+                    for line in lines[-10:]:
+                        print(f"  {Colors.RED}{line.rstrip()}{Colors.RESET}")
+            except Exception:
+                pass
         return process
     
+    def start_voice_bridge(self):
+        """Lance le pont vocal (voice_bridge.py) pour l'interaction voix ↔ Rasa."""
+        log_service("Voice Bridge", "Démarrage du pont vocal Whisper → Rasa → TTS...", Colors.YELLOW)
+        
+        cmd = [sys.executable, "voice_bridge.py"]
+        cwd = self.base_dir / "stt_whisper"
+        
+        # Le pont vocal affiche ses messages directement sur la console
+        # pour que l'utilisateur voie l'interaction en temps réel
+        kwargs = {
+            'cwd': cwd,
+            'env': {**os.environ},  # Hériter toutes les vars d'env (.env déjà chargé)
+        }
+        if self.is_windows:
+            kwargs['shell'] = True
+            kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs['start_new_session'] = True
+        
+        process = subprocess.Popen(cmd, **kwargs)
+        self.processes.append(("Voice Bridge", process))
+        time.sleep(2)
+        
+        if process.poll() is not None:
+            log_service("Voice Bridge", f"✗ Crash (code {process.returncode})", Colors.RED)
+        else:
+            log_service("Voice Bridge", "✓ Pont vocal lancé — le robot écoute !", Colors.GREEN)
+        
+        return process
+
+    def start_emotion_detection(self):
+        """Lance la détection d'émotions + urgences via la caméra (Pepper ou webcam)."""
+        log_service("Emotion", "Démarrage de la détection d'émotions...", Colors.YELLOW)
+        
+        # Créer un petit script lanceur qui initialise EmotionPipeline + EmergencyDetector
+        launcher_code = '''\nimport os, sys, time\nsys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))\n\n# Charger .env\ntry:\n    from dotenv import load_dotenv\n    from pathlib import Path\n    load_dotenv(Path(__file__).resolve().parent.parent / ".env")\nexcept ImportError:\n    pass\n\nPEPPER_IP = os.getenv("PEPPER_IP")\nPEPPER_PORT = int(os.getenv("PEPPER_PORT", "9559"))\n\npep_session = None\nif PEPPER_IP:\n    try:\n        import qi\n        pep_session = qi.Session()\n        pep_session.connect(f"tcp://{PEPPER_IP}:{PEPPER_PORT}")\n        print(f"[EMOTION] Session Pepper → {PEPPER_IP}")\n    except Exception as e:\n        print(f"[EMOTION] Pepper non connecté ({e}), mode webcam PC")\n\nfrom emotion_detector import EmotionPipeline\nfrom emergency_detector import EmergencyDetector\nfrom video_stream import VideoStream\n\npipeline = EmotionPipeline(\n    patient_id=os.getenv("PATIENT_ID", "PAT001"),\n    pepper_session=pep_session\n)\nemergency = EmergencyDetector()\n\nvideo_src = "pepper" if pep_session else 0\nstream = VideoStream(source=video_src, pepper_session=pep_session)\nprint(f"[EMOTION] Démarrage (source={video_src})...")\n\ntry:\n    while True:\n        frame = stream.get_frame()\n        if frame is None:\n            time.sleep(0.2)\n            continue\n        # 1) Détection émotions\n        emotion = pipeline.process_frame(frame)\n        # 2) Détection urgences (étouffement, respiration)\n        is_emergency, reason = emergency.analyze_frame(frame)\n        if is_emergency:\n            print(f"[URGENCE] {reason}")\n            from alert_system import AlertSystem\n            AlertSystem().send_alert(level=2, reason=reason)\n        time.sleep(0.2)\nexcept KeyboardInterrupt:\n    pass\nfinally:\n    stream.release()\n    print("[EMOTION] Arr\u00eat.")\n'''
+        
+        launcher_path = self.base_dir / "emotion_detection" / "_run_emotion.py"
+        with open(launcher_path, 'w', encoding='utf-8') as f:
+            f.write(launcher_code)
+        
+        cmd = [sys.executable, "_run_emotion.py"]
+        cwd = self.base_dir / "emotion_detection"
+        log_f = self._open_log("emotion_detection")
+        
+        kwargs = {
+            'cwd': cwd,
+            'stdout': log_f,
+            'stderr': log_f,
+        }
+        if self.is_windows:
+            kwargs['shell'] = True
+            kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs['start_new_session'] = True
+        
+        process = subprocess.Popen(cmd, **kwargs)
+        self.processes.append(("Emotion Detection", process))
+        time.sleep(3)
+        
+        if process.poll() is not None:
+            log_service("Emotion", f"✗ Crash (code {process.returncode}) — voir logs/emotion_detection.log", Colors.RED)
+            try:
+                log_f.flush()
+                with open(self.log_dir / "emotion_detection.log", 'r', encoding='utf-8', errors='replace') as rf:
+                    lines = rf.readlines()
+                    for line in lines[-10:]:
+                        print(f"  {Colors.RED}{line.rstrip()}{Colors.RESET}")
+            except Exception:
+                pass
+        else:
+            log_service("Emotion", "✓ Détection émotions + urgences active", Colors.GREEN)
+        
+        return process
+
     def start_frontend(self):
         """Lance le serveur de développement frontend."""
         log_service("Frontend", "Démarrage sur le port 5173...", Colors.YELLOW)
         
         cmd = ["npm", "run", "dev"]
         cwd = self.base_dir / "api_server" / "frontend"
+        log_f = self._open_log("frontend")
         
         kwargs = {
             'cwd': cwd,
-            'stdout': subprocess.PIPE,
-            'stderr': subprocess.STDOUT,
+            'stdout': log_f,
+            'stderr': log_f,
         }
         if self.is_windows:
             kwargs['shell'] = True
@@ -226,7 +339,7 @@ class MediBotLauncher:
         
         return pepper_ip, int(pepper_port)
     
-    def test_network_reachability(self, ip, port, timeout=5):
+    def test_network_reachability(self, ip, port, timeout=10):
         """Teste si le robot est joignable sur le réseau (ping TCP)."""
         log_service("Réseau", f"Test de connectivité vers {ip}:{port}...", Colors.YELLOW)
         
@@ -473,6 +586,13 @@ class MediBotLauncher:
         """Arrête tous les processus et déconnecte Pepper."""
         log("\n🛑 Arrêt de tous les services...", Colors.RED)
         
+        # Fermer les fichiers de log
+        for f in self.log_files:
+            try:
+                f.close()
+            except Exception:
+                pass
+
         # Déconnecter Pepper si connecté
         if self.pepper_controller and self.pepper_connected:
             log_service("Pepper", "Déconnexion du robot...", Colors.YELLOW)
@@ -536,6 +656,10 @@ class MediBotLauncher:
   • Rasa API        : http://localhost:5005
   • API Dashboard   : http://localhost:5000
   • Frontend        : http://localhost:5173
+
+{Colors.CYAN}Modules lancés avec --pepper :{Colors.RESET}
+  • Voice Bridge    : Whisper STT → Rasa → TTS (écoute/parole)
+  • Emotion Detect. : Caméra → DeepFace + MediaPipe (émotions/urgences)
 """)
             
             # === CONNEXION PEPPER (si demandé) ===
@@ -551,10 +675,30 @@ class MediBotLauncher:
                     log("🎤 Test de parole sur le robot...", Colors.CYAN)
                     try:
                         if self.pepper_controller and self.pepper_controller.tts:
-                            self.pepper_controller.tts.speak(
-                                "Bonjour, je suis Médi Bot. Tous mes systèmes sont opérationnels."
-                            )
-                            log_service("Test TTS", "✓ Le robot a parlé avec succès !", Colors.GREEN)
+                            tts_svc = self.pepper_controller.tts.tts_service
+
+                            # --- Forcer le volume directement via la session NAOqi ---
+                            session = self.pepper_controller.session
+                            try:
+                                ad = session.service("ALAudioDevice")
+                                current_vol = ad.getOutputVolume()
+                                log_service("Audio", f"Volume master actuel : {current_vol}%", Colors.CYAN)
+                                ad.setOutputVolume(100)
+                                log_service("Audio", "Volume master forcé → 100%", Colors.GREEN)
+                            except Exception as e:
+                                log_service("Audio", f"⚠️ ALAudioDevice : {e}", Colors.YELLOW)
+
+                            try:
+                                tts_svc.setVolume(1.0)
+                                tts_svc.setLanguage("French")
+                                tts_svc.setParameter("speed", 85)
+                            except Exception:
+                                pass
+
+                            # Parler — appel bloquant, attend la fin de la phrase
+                            log_service("TTS", "Robot parle maintenant...", Colors.CYAN)
+                            tts_svc.say("Bonjour ! Je suis Médi Bot. Connexion réussie.")
+                            log_service("Test TTS", "✓ Le robot a parlé !", Colors.GREEN)
                         
                         if self.pepper_controller and self.pepper_controller.leds:
                             self.pepper_controller.leds.set_emotion_led("happy")
@@ -571,6 +715,13 @@ class MediBotLauncher:
 ║  Le chatbot Rasa communiquera avec Pepper en temps réel.     ║
 ╚══════════════════════════════════════════════════════════════╝
 {Colors.RESET}""")
+                    # Lancer le pont vocal pour que le robot écoute et parle
+                    log("\n🎤 Lancement du pont vocal (Whisper → Rasa → TTS)...\n", Colors.CYAN)
+                    self.start_voice_bridge()
+                    
+                    # Lancer la détection d'émotions + urgences via caméra
+                    log("\n👁️ Lancement de la détection d'émotions...\n", Colors.CYAN)
+                    self.start_emotion_detection()
                 else:
                     log(f"""
 {Colors.YELLOW}{Colors.BOLD}
@@ -593,11 +744,14 @@ class MediBotLauncher:
             log(f"{Colors.YELLOW}Appuyez sur Ctrl+C pour arrêter tous les services.{Colors.RESET}")
             
             # Attendre l'interruption
+            already_warned = set()
             while True:
-                # Vérifier que les processus tournent toujours
+                # Vérifier que les processus tournent toujours (une seule alerte par service)
                 for name, process in self.processes:
-                    if process.poll() is not None:
-                        log_service(name, f"⚠️ Processus terminé (code: {process.returncode})", Colors.RED)
+                    if process.poll() is not None and name not in already_warned:
+                        already_warned.add(name)
+                        log_name = name.lower().replace(' ', '_')
+                        log_service(name, f"⚠️  Processus terminé (code {process.returncode}) — voir logs/{log_name}.log", Colors.RED)
                 
                 # Vérifier la connexion Pepper périodiquement
                 if self.pepper_connected and self.pepper_controller:

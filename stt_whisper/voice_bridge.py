@@ -11,27 +11,67 @@ Désormais, si PEPPER_IP est défini dans l'environnement, tout passe par le rob
 """
 
 import os
+import sys
 import time
 import numpy as np
 import requests
 from scipy.io.wavfile import write
+
+# --- Charger les variables d'environnement (.env) ---
+try:
+    from dotenv import load_dotenv
+    from pathlib import Path
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    if _env_path.exists():
+        load_dotenv(dotenv_path=_env_path)
+        print(f"[ENV] .env chargé depuis {_env_path}")
+except ImportError:
+    pass  # python-dotenv pas installé
+
 from whisper_listener import MediBotListener
 
 # --- CONFIGURATION ---
 RASA_URL = "http://localhost:5005/webhooks/rest/webhook"
 FS = 16000        # Fréquence d'échantillonnage Whisper
-DURATION = 8      # BUG CORRIGE: 6s était trop court pour phrases longues
+DURATION = 5      # 5s — bon compromis (8s trop long, 3s trop court)
 TEMP_FILE = "temp_voice.wav"
-MIN_ENERGY_THRESHOLD = 0.01  # Seuil de détection de parole
+MIN_ENERGY_THRESHOLD = 0.003  # Seuil bas pour ne rien rater (0.01 filtrait trop)
 
 # --- Détection du mode (Pepper vs PC) ---
 PEPPER_IP = os.getenv("PEPPER_IP")
 PEPPER_PORT = int(os.getenv("PEPPER_PORT", "9559"))
 USE_PEPPER = bool(PEPPER_IP)
 
+# --- Session NAOqi singleton (évite d'en recréer une à chaque appel) ---
+_pepper_session = None
+
+def _get_pepper_session():
+    """Retourne (ou crée) la session NAOqi partagée."""
+    global _pepper_session
+    if _pepper_session is not None:
+        return _pepper_session
+    try:
+        import qi
+        _pepper_session = qi.Session()
+        _pepper_session.connect(f"tcp://{PEPPER_IP}:{PEPPER_PORT}")
+        print(f"[PEPPER] ✅ Session NAOqi ouverte → {PEPPER_IP}:{PEPPER_PORT}")
+
+        # Forcer le volume master à 100% dès la connexion
+        try:
+            ad = _pepper_session.service("ALAudioDevice")
+            ad.setOutputVolume(100)
+            print("[PEPPER] 🔊 Volume master → 100%")
+        except Exception:
+            pass
+
+        return _pepper_session
+    except Exception as e:
+        print(f"[PEPPER] ❌ Impossible d'ouvrir la session : {e}")
+        return None
+
 print("Chargement du modèle Whisper...")
-print("[INFO] Utilisation du modèle 'base' pour meilleure précision...")
-listener = MediBotListener(model_size="base")
+print("[INFO] Utilisation du modèle 'small' pour meilleure précision...")
+listener = MediBotListener(model_size="small")
 
 # ===================================================================
 # TTS — PAROLE DU ROBOT
@@ -53,22 +93,24 @@ def speak(text: str) -> None:
 
 
 def _speak_pepper(text: str) -> None:
-    """Parler via ALTextToSpeech du robot Pepper."""
+    """Parler via ALTextToSpeech du robot Pepper (session réutilisée)."""
+    session = _get_pepper_session()
+    if session is None:
+        print("[PEPPER TTS] Pas de session NAOqi, fallback pyttsx3.")
+        _speak_pc(text)
+        return
     try:
-        import qi
-        session = qi.Session()
-        session.connect(f"tcp://{PEPPER_IP}:{PEPPER_PORT}")
         tts = session.service("ALTextToSpeech")
         tts.setLanguage("French")
-        tts.setParameter("speed", 90)
-        tts.setParameter("volume", 0.85)
+        tts.setParameter("speed", 85)
+        tts.setVolume(1.0)
         tts.say(text)
-        print(f"[PEPPER TTS] Robot dit : {text}")
-    except ImportError:
-        print("[PEPPER TTS] Module 'qi' non disponible, fallback pyttsx3.")
-        _speak_pc(text)
+        print(f"[PEPPER TTS] 🗣️  Robot dit : {text[:80]}")
     except Exception as e:
         print(f"[PEPPER TTS] Erreur : {e}, fallback pyttsx3.")
+        # Reset session en cas de déconnexion
+        global _pepper_session
+        _pepper_session = None
         _speak_pc(text)
 
 
@@ -108,45 +150,79 @@ def record_audio() -> np.ndarray:
 def _record_pepper() -> np.ndarray:
     """
     Capture audio depuis les microphones de Pepper (ALAudioRecorder).
-    Enregistre sur /home/nao/temp_medibot.wav, puis le lit localement
-    si le fichier est accessible (montage NFS ou copie préalable).
-    Fallback: micro PC si ALAudioRecorder indisponible.
+    1. Enregistre sur /home/nao/temp_medibot.wav via NAOqi
+    2. Récupère le fichier via SFTP (paramiko) ou SCP
+    3. Lit le WAV localement et retourne un numpy array
     """
+    session = _get_pepper_session()
+    if session is None:
+        print("[PEPPER MIC] Pas de session NAOqi, fallback micro PC.")
+        return _record_pc()
     try:
-        import qi
-
-        session = qi.Session()
-        session.connect(f"tcp://{PEPPER_IP}:{PEPPER_PORT}")
-
         recorder = session.service("ALAudioRecorder")
         remote_path = "/home/nao/temp_medibot.wav"
+        local_path = os.path.join(os.path.dirname(__file__), "pepper_audio.wav")
 
-        # Enregistrement depuis le micro frontal de la tête (channel 3)
-        # Tuple : (Left, Right, Front, Rear) — Front uniquement
-        recorder.startMicrophonesRecording(remote_path, "wav", FS, (0, 0, 1, 0))
-        print(f"[PEPPER MIC] Écoute en cours ({DURATION}s)...")
+        # Supprimer l'ancien enregistrement distant s'il existe
+        try:
+            recorder.stopMicrophonesRecording()
+        except Exception:
+            pass
+
+        # Enregistrement — tous les micros activés pour meilleure captation
+        # (0=Left, 1=Right, 2=Front, 3=Rear)
+        print(f"[PEPPER MIC] 🎤 Écoute en cours ({DURATION}s)...")
+        recorder.startMicrophonesRecording(remote_path, "wav", FS, (1, 0, 1, 0))
         time.sleep(DURATION)
         recorder.stopMicrophonesRecording()
-        print("[PEPPER MIC] Enregistrement terminé.")
+        print("[PEPPER MIC] ✅ Enregistrement terminé.")
 
-        # Tentative de lecture du fichier si accessible via chemin monté
-        local_copy = os.path.join(os.path.dirname(__file__), "pepper_audio.wav")
-        if os.path.exists(local_copy):
+        # --- Récupérer le fichier via SFTP ---
+        try:
+            import paramiko
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(PEPPER_IP, username="nao", password="nao", timeout=5)
+            sftp = ssh.open_sftp()
+            sftp.get(remote_path, local_path)
+            sftp.close()
+            ssh.close()
+            print(f"[PEPPER MIC] 📥 Fichier récupéré via SFTP → {local_path}")
+        except ImportError:
+            # paramiko pas installé → essayer scp via subprocess
+            print("[PEPPER MIC] paramiko non installé, tentative scp...")
+            import subprocess
+            result = subprocess.run(
+                ["scp", f"nao@{PEPPER_IP}:{remote_path}", local_path],
+                capture_output=True, timeout=10
+            )
+            if result.returncode != 0:
+                print(f"[PEPPER MIC] ⚠️ SCP échoué : {result.stderr.decode()}")
+                print("[PEPPER MIC] Fallback micro PC.")
+                return _record_pc()
+        except Exception as e:
+            print(f"[PEPPER MIC] ⚠️ Transfert échoué ({e}), fallback micro PC.")
+            return _record_pc()
+
+        # --- Lire le WAV récupéré ---
+        if os.path.exists(local_path) and os.path.getsize(local_path) > 100:
             from scipy.io.wavfile import read as wavread
-            rate, data = wavread(local_copy)
+            rate, data = wavread(local_path)
             if data.ndim > 1:
-                data = data[:, 0]
-            return data.astype(np.float32) / 32768.0
+                data = data[:, 0]  # Mono uniquement
+            audio = data.astype(np.float32) / 32768.0
+            energy = np.sqrt(np.mean(audio ** 2))
+            print(f"[PEPPER MIC] 📊 Énergie audio : {energy:.4f} (seuil: {MIN_ENERGY_THRESHOLD})")
+            return audio
+        else:
+            print("[PEPPER MIC] ⚠️ Fichier audio vide ou introuvable, fallback micro PC.")
+            return _record_pc()
 
-        # Si fichier non accessible localement, fallback PC
-        print("[PEPPER MIC] Fichier distant non monté localement, fallback micro PC.")
-        return _record_pc()
-
-    except ImportError:
-        print("[PEPPER MIC] Module 'qi' non disponible, fallback micro PC.")
-        return _record_pc()
     except Exception as e:
         print(f"[PEPPER MIC] Erreur ({e}), fallback micro PC.")
+        # Reset session en cas de déconnexion
+        global _pepper_session
+        _pepper_session = None
         return _record_pc()
 
 

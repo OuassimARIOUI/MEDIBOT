@@ -58,7 +58,31 @@ class PepperTTS:
         try:
             self.tts_service = self.session.service("ALTextToSpeech")
             logger.info("ALTextToSpeech service connected successfully")
-            
+
+            # ============================================================
+            # FORCER LE VOLUME À TOUS LES NIVEAUX
+            # NAOqi a 3 couches de volume indépendantes :
+            #   1. ALAudioDevice.setOutputVolume  → volume master (speakers)
+            #   2. ALTextToSpeech.setVolume        → volume TTS global
+            #   3. ALTextToSpeech.setParameter("volume", x)  → volume relatif
+            # Si l'un d'entre eux est à 0, le robot est MUET.
+            # ============================================================
+
+            # 1. Volume master des haut-parleurs (0-100)
+            try:
+                audio_device = self.session.service("ALAudioDevice")
+                audio_device.setOutputVolume(100)
+                logger.info("ALAudioDevice master volume → 100%")
+            except Exception as e:
+                logger.warning(f"ALAudioDevice.setOutputVolume failed: {e}")
+
+            # 2. Volume global TTS (0.0 - 1.0)
+            try:
+                self.tts_service.setVolume(1.0)
+                logger.info("ALTextToSpeech.setVolume → 1.0")
+            except Exception as e:
+                logger.warning(f"ALTextToSpeech.setVolume failed: {e}")
+
             # Set default parameters for medical context (clear and calm voice)
             self._configure_default_voice()
             
@@ -76,13 +100,13 @@ class PepperTTS:
             # Set moderate speech speed (100 = normal, lower = slower)
             self.tts_service.setParameter("speed", 85)
             
-            # Set comfortable volume for hospital environment
-            self.tts_service.setParameter("volume", 0.8)
+            # Volume relatif TTS (3ème niveau) — 1.0 = max
+            self.tts_service.setParameter("volume", 1.0)
             
             # Set language
             self.tts_service.setLanguage(self.language)
             
-            logger.info(f"Voice configured: language={self.language}, speed=85, volume=0.8")
+            logger.info(f"Voice configured: language={self.language}, speed=85, volume=1.0")
             
         except Exception as e:
             logger.warning(f"Could not configure voice parameters: {e}")

@@ -19,7 +19,7 @@ class VideoStream:
         stream = VideoStream(source="pepper", pepper_session=session)
     """
 
-    def __init__(self, source=0, pepper_session=None):
+    def __init__(self, source="pepper", pepper_session=None):
         self._mode = "local"
         self._cap = None
         self._pepper_camera = None
