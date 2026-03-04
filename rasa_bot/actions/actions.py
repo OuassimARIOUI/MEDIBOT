@@ -1,6 +1,7 @@
 from typing import Any, Text, Dict, List
 from datetime import datetime
 import re
+import threading
 
 from rasa_sdk import Action, Tracker
 from rasa_sdk.executor import CollectingDispatcher
@@ -28,6 +29,47 @@ except ImportError:
         get_all_patients
     )
     from .alert_service import trigger_emergency_alert, trigger_nurse_call
+
+
+# ==========================================================
+# SINGLETON SESSION PEPPER
+# Une seule session NAOqi partagée entre toutes les actions.
+# Évite les connexions multiples (conflit NAOqi + timeout Rasa)
+# ==========================================================
+_pepper_session = None
+_pepper_session_lock = threading.Lock()
+
+def _get_or_create_pepper_session(ip: str, port: int):
+    """
+    Retourne la session NAOqi existante (singleton) ou en crée une nouvelle.
+    Thread-safe. Retourne None si la connexion est impossible.
+    """
+    global _pepper_session
+    with _pepper_session_lock:
+        try:
+            # Tester si la session existante est encore valide
+            if _pepper_session is not None:
+                try:
+                    _pepper_session.service("ALTextToSpeech")  # Ping rapide
+                    return _pepper_session
+                except Exception:
+                    # Session morte → en créer une nouvelle
+                    _pepper_session = None
+
+            # Créer une nouvelle session
+            import qi
+            session = qi.Session()
+            session.connect(f"tcp://{ip}:{port}")
+            _pepper_session = session
+            print(f"[PEPPER SESSION] ✅ Nouvelle session NAOqi créée vers {ip}:{port}")
+            return _pepper_session
+
+        except ImportError:
+            print("[PEPPER SESSION] Module 'qi' non installé (mode PC simulation).")
+            return None
+        except Exception as e:
+            print(f"[PEPPER SESSION] ❌ Impossible de se connecter : {e}")
+            return None
 
 
 # =================================================
@@ -392,8 +434,8 @@ class ActionHandleAffirm(Action):
         
         if asked_emergency:
             # Déclencher l'alerte niveau 2
+            # Note: insert_alert est importé au niveau module, pas besoin de réimporter
             try:
-                from .db_utils import insert_alert
                 insert_alert(message="Urgence vitale potentielle - patient confirme", patient_id=patient_id or "UNKNOWN")
             except Exception as e:
                 print(f"[ERREUR ALERT DB] {e}")
@@ -581,7 +623,6 @@ class ActionPlaySong(Action):
 
         import random
         import os
-        import sys
 
         patient_name = tracker.get_slot("patient_full_name")
         song = random.choice(self.SONGS)
@@ -609,80 +650,83 @@ class ActionPlaySong(Action):
             )
 
         # ------------------------------------------------------------------
-        # 2. Commandes Pepper (TTS + gestes + LEDs)
+        # 2. Commandes Pepper (TTS + gestes + LEDs) dans un thread daemon
+        # → Non bloquant : Rasa n'attend pas la fin de la chanson (évite timeout)
+        # → Utilise la session qi partagée via singleton pour ne pas créer
+        #   plusieurs connexions concurrentes au robot.
         # ------------------------------------------------------------------
-        try:
-            # Récupérer la session Pepper si disponible
-            pepper_ip = os.getenv("PEPPER_IP")
-            pepper_port = int(os.getenv("PEPPER_PORT", "9559"))
+        import threading
 
-            if pepper_ip:
+        def _play_on_pepper(song_data: dict) -> None:
+            """Exécutée dans un thread daemon — Rasa ne bloque pas."""
+            try:
+                pepper_ip = os.getenv("PEPPER_IP")
+                pepper_port = int(os.getenv("PEPPER_PORT", "9559"))
+
+                if not pepper_ip:
+                    print(f"[CHANSON] Mode simulation – PEPPER_IP non défini.")
+                    print(f"[CHANSON] Chanson : {song_data['title']} ({song_data['artist']})")
+                    print(f"[CHANSON] Paroles : {song_data['lyrics']}")
+                    return
+
                 import qi
 
-                session = qi.Session()
-                session.connect(f"tcp://{pepper_ip}:{pepper_port}")
+                # Réutiliser ou créer une session unique (singleton de module)
+                session = _get_or_create_pepper_session(pepper_ip, pepper_port)
+                if session is None:
+                    print("[CHANSON] Impossible d'obtenir une session Pepper.")
+                    return
 
-                # === GESTE : mouvement avant de chanter ===
+                # === GESTE : behavior avant de chanter ===
                 try:
                     behavior_service = session.service("ALBehaviorManager")
-                    if behavior_service.isBehaviorInstalled(song["gesture"]):
-                        behavior_service.runBehavior(song["gesture"])
+                    if behavior_service.isBehaviorInstalled(song_data["gesture"]):
+                        behavior_service.runBehavior(song_data["gesture"])
                 except Exception as e:
                     print(f"[CHANSON] Geste non disponible ({e}), poursuite...")
 
-                # === LEDs : couleur selon l'émotion ===
+                # === LEDs : format NAOqi = entier hexadécimal + durée ===
+                # IMPORTANT: ALLeds.fadeRGB(name, hexRGB_int, duration_float)
+                # PAS (r, g, b) séparés — ça crashe sur le robot !
+                emotion_hex = {
+                    "calm":  0x0066CC,   # Bleu apaisant
+                    "happy": 0x00CC66,   # Vert joyeux
+                }
+                hex_color = emotion_hex.get(song_data["emotion"], 0xFFFFFF)
                 try:
                     leds = session.service("ALLeds")
-                    emotion_colors = {
-                        "calm":  (0.0, 0.4, 1.0),   # Bleu
-                        "happy": (0.0, 0.9, 0.3),   # Vert
-                    }
-                    r, g, b = emotion_colors.get(song["emotion"], (1.0, 1.0, 1.0))
-                    leds.fadeRGB("FaceLeds", r, g, b, 1.0)
+                    leds.fadeRGB("FaceLeds", hex_color, 1.0)
                 except Exception as e:
                     print(f"[CHANSON] LEDs non disponibles ({e}), poursuite...")
 
                 # === TTS : Pepper parle (intro + paroles + outro) ===
                 tts = session.service("ALTextToSpeech")
                 tts.setLanguage("French")
-                tts.setParameter("speed", 80)   # Légèrement plus lent pour chanter
+                tts.setParameter("speed", 80)    # Légèrement plus lent pour chanter
                 tts.setParameter("volume", 0.85)
 
-                # Intro
-                tts.say(song["intro"])
+                tts.say(song_data["intro"])
+                tts.say(song_data["lyrics"])
+                tts.say(song_data["outro"])
 
-                # Geste de balancement pendant la chanson (idle_motion)
+                # LEDs : retour blanc neutre
                 try:
-                    motion = session.service("ALMotion")
-                    # Optioannel : léger mouvement de tête pendnat les paroles
-                    motion.setStiffnesses("Head", 1.0)
+                    leds.fadeRGB("FaceLeds", 0xFFFFFF, 2.0)
                 except Exception:
                     pass
 
-                # Paroles chantées (Pepper les dit d'une voix douce)
-                tts.say(song["lyrics"])
+                print(f"[CHANSON] ✅ Pepper a chanté : {song_data['title']}")
 
-                # Outro
-                tts.say(song["outro"])
+            except ImportError:
+                print("[CHANSON] Module 'qi' non disponible – mode simulation PC.")
+            except Exception as e:
+                import traceback
+                print(f"[CHANSON] Erreur Pepper : {e}")
+                traceback.print_exc()
 
-                # LEDs : retour à neutral blanc
-                try:
-                    leds.fadeRGB("FaceLeds", 1.0, 1.0, 1.0, 2.0)
-                except Exception:
-                    pass
-
-                print(f"[CHANSON] ✅ Pepper a chanté : {song['title']}")
-            else:
-                print(f"[CHANSON] Mode simulation – PEPPER_IP non défini.")
-                print(f"[CHANSON] Chanson sélectionnée : {song['title']} ({song['artist']})")
-                print(f"[CHANSON] Paroles : {song['lyrics']}")
-
-        except ImportError:
-            print("[CHANSON] Module 'qi' non disponible – mode simulation PC.")
-            print(f"[CHANSON] Chanson : {song['title']} | Paroles : {song['lyrics']}")
-
-        except Exception as e:
-            print(f"[CHANSON] Erreur Pepper : {e}")
+        # Lancer dans un thread daemon (Rasa répond immédiatement, Pepper chante en arrière-plan)
+        t = threading.Thread(target=_play_on_pepper, args=(song,), daemon=True)
+        t.start()
 
         return []
 

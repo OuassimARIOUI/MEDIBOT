@@ -194,28 +194,6 @@ forms: {}
 
 e2e_actions: []
 
-# Synonymes pour reconnaissance robuste des prénoms
-# Whisper peut transcrire différemment selon la prononciation
-synonym_entities:
-  - synonym: "ouassim"
-    examples:
-      - wasim
-      - wassim
-      - ouaassim
-      - Wasim
-      - Wassim
-      - Ouassim
-      - OUASSIM
-  
-  - synonym: "asmaa"
-    examples:
-      - asma
-      - assma
-      - Asma
-      - Assma
-      - ASMA
-      - ASMAA
-
 session_config:
   session_expiration_time: 60
   carry_over_slots_to_new_session: true
