@@ -23,13 +23,20 @@ nlu:
     - chanson
     - je veux une chanson
     - chante-moi quelque chose
+    - chante moi une chanson
+    - chante-moi une chanson
     - tu peux me chanter quelque chose
+    - tu peux chanter
+    - tu sais chanter
     - mets de la musique
     - une chanson s'il te plaît
     - je voudrais écouter de la musique
     - oui une chanson
     - musique
     - mets-moi une musique apaisante
+    - je veux t'entendre chanter
+    - chante
+    - oui je veux une chanson
 
 - intent: request_discussion
   examples: |

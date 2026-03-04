@@ -320,7 +320,7 @@ class ActionProposeActivity(Action):
             return []
 
         dispatcher.utter_message(
-            text="Parfait. Souhaitez-vous que je vous chante quelque chose ou préférez-vous discuter ?"
+            text="Parfait. Souhaitez-vous que je vous chante une chanson (je connais des chansons françaises traditionnelles) ou préférez-vous discuter ?"
         )
         # Marquer qu'on a posé la question activité
         return [
@@ -477,13 +477,100 @@ class ActionHandleDeny(Action):
 
 
 # ======================================
-# ACTION : Jouer une chanson / musique
+# ACTION : Chanter une chanson (voix Pepper + gestes)
 # ======================================
 
 class ActionPlaySong(Action):
 
     def name(self) -> Text:
         return "action_play_song"
+
+    # ------------------------------------------------------------------
+    # Chansons que Pepper chantera avec sa voix ALTextToSpeech.
+    # "lyrics" = ce que Pepper prononce à voix haute (TTS).
+    # "intro"  = phrase dite AVANT de chanter.
+    # "outro"  = phrase dite APRÈS avoir chanté.
+    # "emotion"= couleur LEDs pendant la chanson.
+    # "gesture"= geste Pepper avant de chanter.
+    # ------------------------------------------------------------------
+    SONGS = [
+        {
+            "title": "Au Clair de la Lune",
+            "artist": "Chanson traditionnelle française",
+            "intro": "Je vais vous chanter Au clair de la lune.",
+            "lyrics": (
+                "Au clair de la lune, mon ami Pierrot, "
+                "prête-moi ta plume pour écrire un mot. "
+                "Ma chandelle est morte, je n'ai plus de feu. "
+                "Ouvre-moi ta porte, pour l'amour de Dieu."
+            ),
+            "outro": "J'espère que cette berceuse vous apporte un peu de sérénité.",
+            "emotion": "calm",
+            "gesture": "animations/Stand/Emotions/Neutral/Calm_1",
+        },
+        {
+            "title": "Frère Jacques",
+            "artist": "Chanson traditionnelle française",
+            "intro": "Voici Frère Jacques, une chanson qui réchauffe le cœur.",
+            "lyrics": (
+                "Frère Jacques, Frère Jacques, "
+                "dormez-vous ? dormez-vous ? "
+                "Sonnez les matines ! Sonnez les matines ! "
+                "Din din don, din din don."
+            ),
+            "outro": "Voilà, je vous souhaite une bonne nuit comme Frère Jacques !",
+            "emotion": "happy",
+            "gesture": "animations/Stand/Gestures/Yes_1",
+        },
+        {
+            "title": "La Vie en Rose",
+            "artist": "Édith Piaf",
+            "intro": "Je vais interpréter un extrait de La Vie en Rose, d'Édith Piaf.",
+            "lyrics": (
+                "Des yeux qui font baisser les miens, "
+                "un rire qui se perd sur sa bouche, "
+                "voilà le portrait sans retouches "
+                "de l'homme auquel j'appartiens. "
+                "Quand il me prend dans ses bras, "
+                "il me parle tout bas, "
+                "je vois la vie en rose."
+            ),
+            "outro": "Édith Piaf avait une voix magnifique. J'espère avoir rendu hommage à cette belle chanson.",
+            "emotion": "happy",
+            "gesture": "animations/Stand/Emotions/Positive/Happy_4",
+        },
+        {
+            "title": "Douce France",
+            "artist": "Charles Trenet",
+            "intro": "Je vais vous chanter Douce France de Charles Trenet.",
+            "lyrics": (
+                "Douce France, cher pays de mon enfance, "
+                "bercée de tendre insouciance, "
+                "je t'ai gardée dans mon cœur. "
+                "Mon village au clocher, aux maisons fleuries, "
+                "ô douce France."
+            ),
+            "outro": "Une belle chanson pour penser à des souvenirs doux.",
+            "emotion": "calm",
+            "gesture": "animations/Stand/Emotions/Neutral/Calm_1",
+        },
+        {
+            "title": "Promenons-nous dans les bois",
+            "artist": "Chanson traditionnelle française",
+            "intro": "Je vais vous chanter Promenons-nous dans les bois.",
+            "lyrics": (
+                "Promenons-nous dans les bois, "
+                "pendant que le loup n'y est pas. "
+                "Si le loup y était, "
+                "il nous mangerait. "
+                "Mais comme il n'y est pas, "
+                "il nous mangera pas !"
+            ),
+            "outro": "Voilà ! Une chanson pleine de vivacité pour vous redonner le sourire.",
+            "emotion": "happy",
+            "gesture": "animations/Stand/Gestures/Hey_1",
+        },
+    ]
 
     def run(
         self,
@@ -493,43 +580,110 @@ class ActionPlaySong(Action):
     ) -> List[Dict[Text, Any]]:
 
         import random
-        
+        import os
+        import sys
+
         patient_name = tracker.get_slot("patient_full_name")
-        
-        # Liste de musiques apaisantes connues
-        songs = [
-            {"title": "Clair de Lune", "artist": "Claude Debussy", "type": "classique"},
-            {"title": "Gymnopédie No.1", "artist": "Erik Satie", "type": "classique"},
-            {"title": "La Vie en Rose", "artist": "Édith Piaf", "type": "française"},
-            {"title": "Imagine", "artist": "John Lennon", "type": "pop"},
-            {"title": "What a Wonderful World", "artist": "Louis Armstrong", "type": "jazz"},
-            {"title": "Hallelujah", "artist": "Leonard Cohen", "type": "pop"},
-            {"title": "Ne me quitte pas", "artist": "Jacques Brel", "type": "française"},
-            {"title": "Canon in D", "artist": "Johann Pachelbel", "type": "classique"},
-            {"title": "Somewhere Over the Rainbow", "artist": "Israel Kamakawiwo'ole", "type": "relaxante"},
-            {"title": "The Sound of Silence", "artist": "Simon & Garfunkel", "type": "folk"},
-        ]
-        
-        song = random.choice(songs)
-        
-        # LED bleues activées (simulation)
-        # Dans un vrai déploiement Pepper: ALLeds.fadeRGB("FaceLeds", 0, 0, 255, 1.0)
-        
-        if patient_name:
+        song = random.choice(self.SONGS)
+
+        # ------------------------------------------------------------------
+        # 1. Message texte au dashboard / frontend (toujours visible)
+        # ------------------------------------------------------------------
+        first_name = patient_name.split()[0] if patient_name else None
+
+        if first_name:
             dispatcher.utter_message(
-                text=f"🎵 Je mets une musique pour vous, {patient_name}. "
-                     f"Voici \"{song['title']}\" de {song['artist']}. "
-                     f"Fermez les yeux et détendez-vous..."
+                text=(
+                    f"🎵 Très bien {first_name}, je vais vous chanter "
+                    f"\"{song['title']}\" de {song['artist']}. "
+                    f"Installez-vous confortablement..."
+                )
             )
         else:
             dispatcher.utter_message(
-                text=f"🎵 Voici \"{song['title']}\" de {song['artist']}. "
-                     f"Fermez les yeux et détendez-vous..."
+                text=(
+                    f"🎵 Je vais vous chanter \"{song['title']}\" "
+                    f"de {song['artist']}. "
+                    f"Installez-vous confortablement..."
+                )
             )
-        
-        # Ici on déclencherait le behavior musique sur Pepper via NAOqi:
-        # audio_player.playFile("/home/nao/musiques/" + song['file'])
-        
+
+        # ------------------------------------------------------------------
+        # 2. Commandes Pepper (TTS + gestes + LEDs)
+        # ------------------------------------------------------------------
+        try:
+            # Récupérer la session Pepper si disponible
+            pepper_ip = os.getenv("PEPPER_IP")
+            pepper_port = int(os.getenv("PEPPER_PORT", "9559"))
+
+            if pepper_ip:
+                import qi
+
+                session = qi.Session()
+                session.connect(f"tcp://{pepper_ip}:{pepper_port}")
+
+                # === GESTE : mouvement avant de chanter ===
+                try:
+                    behavior_service = session.service("ALBehaviorManager")
+                    if behavior_service.isBehaviorInstalled(song["gesture"]):
+                        behavior_service.runBehavior(song["gesture"])
+                except Exception as e:
+                    print(f"[CHANSON] Geste non disponible ({e}), poursuite...")
+
+                # === LEDs : couleur selon l'émotion ===
+                try:
+                    leds = session.service("ALLeds")
+                    emotion_colors = {
+                        "calm":  (0.0, 0.4, 1.0),   # Bleu
+                        "happy": (0.0, 0.9, 0.3),   # Vert
+                    }
+                    r, g, b = emotion_colors.get(song["emotion"], (1.0, 1.0, 1.0))
+                    leds.fadeRGB("FaceLeds", r, g, b, 1.0)
+                except Exception as e:
+                    print(f"[CHANSON] LEDs non disponibles ({e}), poursuite...")
+
+                # === TTS : Pepper parle (intro + paroles + outro) ===
+                tts = session.service("ALTextToSpeech")
+                tts.setLanguage("French")
+                tts.setParameter("speed", 80)   # Légèrement plus lent pour chanter
+                tts.setParameter("volume", 0.85)
+
+                # Intro
+                tts.say(song["intro"])
+
+                # Geste de balancement pendant la chanson (idle_motion)
+                try:
+                    motion = session.service("ALMotion")
+                    # Optioannel : léger mouvement de tête pendnat les paroles
+                    motion.setStiffnesses("Head", 1.0)
+                except Exception:
+                    pass
+
+                # Paroles chantées (Pepper les dit d'une voix douce)
+                tts.say(song["lyrics"])
+
+                # Outro
+                tts.say(song["outro"])
+
+                # LEDs : retour à neutral blanc
+                try:
+                    leds.fadeRGB("FaceLeds", 1.0, 1.0, 1.0, 2.0)
+                except Exception:
+                    pass
+
+                print(f"[CHANSON] ✅ Pepper a chanté : {song['title']}")
+            else:
+                print(f"[CHANSON] Mode simulation – PEPPER_IP non défini.")
+                print(f"[CHANSON] Chanson sélectionnée : {song['title']} ({song['artist']})")
+                print(f"[CHANSON] Paroles : {song['lyrics']}")
+
+        except ImportError:
+            print("[CHANSON] Module 'qi' non disponible – mode simulation PC.")
+            print(f"[CHANSON] Chanson : {song['title']} | Paroles : {song['lyrics']}")
+
+        except Exception as e:
+            print(f"[CHANSON] Erreur Pepper : {e}")
+
         return []
 
 
