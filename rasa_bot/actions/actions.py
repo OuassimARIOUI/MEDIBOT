@@ -650,6 +650,16 @@ class ActionPlaySong(Action):
             )
 
         # ------------------------------------------------------------------
+        # Envoyer les paroles via le dispatcher pour que voice_bridge les
+        # prononce (pyttsx3 en mode PC, ALTextToSpeech via voice_bridge
+        # en mode Pepper).  Avant, les paroles n'étaient envoyées que dans
+        # un thread daemon Pepper → le patient en mode PC n'entendait rien.
+        # ------------------------------------------------------------------
+        dispatcher.utter_message(text=song["intro"])
+        dispatcher.utter_message(text=song["lyrics"])
+        dispatcher.utter_message(text=song["outro"])
+
+        # ------------------------------------------------------------------
         # 2. Commandes Pepper (TTS + gestes + LEDs) dans un thread daemon
         # → Non bloquant : Rasa n'attend pas la fin de la chanson (évite timeout)
         # → Utilise la session qi partagée via singleton pour ne pas créer
@@ -699,17 +709,15 @@ class ActionPlaySong(Action):
                 except Exception as e:
                     print(f"[CHANSON] LEDs non disponibles ({e}), poursuite...")
 
-                # === TTS : Pepper parle (intro + paroles + outro) ===
-                tts = session.service("ALTextToSpeech")
-                tts.setLanguage("French")
-                tts.setParameter("speed", 80)    # Légèrement plus lent pour chanter
-                tts.setParameter("volume", 0.85)
-
-                tts.say(song_data["intro"])
-                tts.say(song_data["lyrics"])
-                tts.say(song_data["outro"])
+                # === TTS supprimé du thread daemon ===
+                # Les paroles sont désormais envoyées via dispatcher →
+                # voice_bridge les prononce (PC: pyttsx3 / Pepper: ALTextToSpeech).
+                # Cela évite le double-speak quand voice_bridge est actif.
 
                 # LEDs : retour blanc neutre
+                # Attendre un peu pour que les LEDs restent pendant la chanson
+                import time as _t
+                _t.sleep(15)
                 try:
                     leds.fadeRGB("FaceLeds", 0xFFFFFF, 2.0)
                 except Exception:

@@ -33,7 +33,7 @@ from whisper_listener import MediBotListener
 # --- CONFIGURATION ---
 RASA_URL = "http://localhost:5005/webhooks/rest/webhook"
 FS = 16000        # Fréquence d'échantillonnage Whisper
-DURATION = 5      # 5s — bon compromis (8s trop long, 3s trop court)
+DURATION = 3      # 5s — bon compromis (8s trop long, 3s trop court)
 TEMP_FILE = "temp_voice.wav"
 MIN_ENERGY_THRESHOLD = 0.003  # Seuil bas pour ne rien rater (0.01 filtrait trop)
 
@@ -169,10 +169,12 @@ def _record_pepper() -> np.ndarray:
         except Exception:
             pass
 
-        # Enregistrement — tous les micros activés pour meilleure captation
-        # (0=Left, 1=Right, 2=Front, 3=Rear)
+        # Enregistrement — micro frontal + gauche
+        # NAOqi attend une LISTE (AL::ALValue), PAS un tuple
+        # [Left, Right, Front, Rear] — 1=actif, 0=inactif
+        channels = [0, 0, 1, 0]   # Front uniquement (le plus proche du patient)
         print(f"[PEPPER MIC] 🎤 Écoute en cours ({DURATION}s)...")
-        recorder.startMicrophonesRecording(remote_path, "wav", FS, (1, 0, 1, 0))
+        recorder.startMicrophonesRecording(remote_path, "wav", FS, channels)
         time.sleep(DURATION)
         recorder.stopMicrophonesRecording()
         print("[PEPPER MIC] ✅ Enregistrement terminé.")
@@ -220,9 +222,10 @@ def _record_pepper() -> np.ndarray:
 
     except Exception as e:
         print(f"[PEPPER MIC] Erreur ({e}), fallback micro PC.")
-        # Reset session en cas de déconnexion
-        global _pepper_session
-        _pepper_session = None
+        # Ne reset la session que si c'est une erreur de connexion
+        if "connection" in str(e).lower() or "disconnected" in str(e).lower():
+            global _pepper_session
+            _pepper_session = None
         return _record_pc()
 
 
@@ -248,19 +251,29 @@ def has_speech(audio_data: np.ndarray, threshold: float = MIN_ENERGY_THRESHOLD) 
     return energy > threshold
 
 
-def send_to_rasa(message: str) -> None:
+def send_to_rasa(message: str, max_retries: int = 3) -> None:
     """Envoie le texte transcrit à Rasa et fait parler le bot avec la réponse."""
     payload = {"sender": "user_voice", "message": message}
-    try:
-        response = requests.post(RASA_URL, json=payload, timeout=10)
-        res_json = response.json()
-        for msg in res_json:
-            bot_text = msg.get('text')
-            if bot_text:
-                print(f"MediBot : {bot_text}")
-                speak(bot_text)
-    except Exception as e:
-        print(f"[RASA] Erreur de connexion : {e}")
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.post(RASA_URL, json=payload, timeout=10)
+            res_json = response.json()
+            for msg in res_json:
+                bot_text = msg.get('text')
+                if bot_text:
+                    print(f"MediBot : {bot_text}")
+                    speak(bot_text)
+            return  # Succès, on quitte
+        except requests.exceptions.ConnectionError:
+            if attempt < max_retries:
+                print(f"[RASA] Serveur pas encore prêt, tentative {attempt}/{max_retries}... (attente 5s)")
+                time.sleep(5)
+            else:
+                print(f"[RASA] ⚠️ Serveur Rasa injoignable sur {RASA_URL}")
+                print(f"[RASA]    Vérifiez que Rasa tourne : curl {RASA_URL}")
+        except Exception as e:
+            print(f"[RASA] Erreur : {e}")
+            return
 
 
 # ===================================================================
@@ -278,7 +291,22 @@ def run_voice_loop() -> None:
     else:
         print("[INFO] TTS    : pyttsx3 (haut-parleur PC)")
         print("[INFO] MIC    : sounddevice (microphone PC)")
-    print("[ASTUCE] Parlez clairement. Exemples : 'Je suis Ouassim' ou 'SOS j'ai besoin d'aide'\n")
+    print("[ASTUCE] Parlez clairement. Exemples : 'Je suis Ouassim' ou 'SOS j'ai besoin d'aide'")
+
+    # Attendre que Rasa soit prêt (il met ~60s pour charger le modèle)
+    print("\n[INFO] Attente que Rasa soit prêt...")
+    for i in range(24):  # 24 × 5s = 2 min max
+        try:
+            r = requests.get(RASA_URL.replace("/webhooks/rest/webhook", "/"), timeout=3)
+            if r.status_code == 200:
+                print("[INFO] ✅ Rasa est prêt !\n")
+                break
+        except Exception:
+            pass
+        print(f"[INFO] Rasa pas encore prêt... ({(i+1)*5}s)")
+        time.sleep(5)
+    else:
+        print("[WARN] ⚠️ Rasa n'a pas répondu après 2 min. On continue quand même.\n")
 
     while True:
         icon = "🤖" if USE_PEPPER else "🎤"
