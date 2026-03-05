@@ -690,16 +690,9 @@ class ActionPlaySong(Action):
                 except Exception as e:
                     print(f"[CHANSON] LEDs non disponibles ({e}), poursuite...")
 
-                # === Jouer le WAV sur le haut-parleur de Pepper ===
-                try:
-                    audio_player = session.service("ALAudioPlayer")
-                    file_id = audio_player.loadFile(audio_path)
-                    audio_player.play(file_id)
-                    print(f"[CHANSON] 🔊 Pepper joue : {song_data['title']}")
-                except Exception as e:
-                    print(f"[CHANSON] ALAudioPlayer indisponible ({e}), le PC joue la musique.")
-
-                # Attendre que la musique finisse (~20s max)
+                # NOTE : la lecture audio WAV est gérée par voice_bridge
+                # (via le json_message play_audio). Ici on fait seulement
+                # les gestes + LEDs. On attend ~20s pour la durée de la musique.
                 import time as _t
                 _t.sleep(20)
 

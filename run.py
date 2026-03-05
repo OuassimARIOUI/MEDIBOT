@@ -248,35 +248,51 @@ class MediBotLauncher:
         return process
 
     def start_emotion_detection(self):
-        """Lance la détection d'émotions + urgences via la caméra (Pepper ou webcam)."""
+        """Lance la détection d'émotions + urgences via la caméra (Pepper ou webcam).
+
+        Utilise un venv séparé (EMOTION_VENV_PYTHON) pour éviter les conflits
+        deepface/tensorflow vs Rasa.  Si la variable n'est pas définie,
+        on tente avec le Python courant (mais deepface risque de manquer).
+        """
         log_service("Emotion", "Démarrage de la détection d'émotions...", Colors.YELLOW)
-        
-        # Créer un petit script lanceur qui initialise EmotionPipeline + EmergencyDetector
-        launcher_code = '''\nimport os, sys, time\nsys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))\n\n# Charger .env\ntry:\n    from dotenv import load_dotenv\n    from pathlib import Path\n    load_dotenv(Path(__file__).resolve().parent.parent / ".env")\nexcept ImportError:\n    pass\n\nPEPPER_IP = os.getenv("PEPPER_IP")\nPEPPER_PORT = int(os.getenv("PEPPER_PORT", "9559"))\n\npep_session = None\nif PEPPER_IP:\n    try:\n        import qi\n        pep_session = qi.Session()\n        pep_session.connect(f"tcp://{PEPPER_IP}:{PEPPER_PORT}")\n        print(f"[EMOTION] Session Pepper → {PEPPER_IP}")\n    except Exception as e:\n        print(f"[EMOTION] Pepper non connecté ({e}), mode webcam PC")\n\nfrom emotion_detector import EmotionPipeline\nfrom emergency_detector import EmergencyDetector\nfrom video_stream import VideoStream\n\npipeline = EmotionPipeline(\n    patient_id=os.getenv("PATIENT_ID", "PAT001"),\n    pepper_session=pep_session\n)\nemergency = EmergencyDetector()\n\nvideo_src = "pepper" if pep_session else 0\nstream = VideoStream(source=video_src, pepper_session=pep_session)\nprint(f"[EMOTION] Démarrage (source={video_src})...")\n\ntry:\n    while True:\n        frame = stream.get_frame()\n        if frame is None:\n            time.sleep(0.2)\n            continue\n        # 1) Détection émotions\n        emotion = pipeline.process_frame(frame)\n        # 2) Détection urgences (étouffement, respiration)\n        is_emergency, reason = emergency.analyze_frame(frame)\n        if is_emergency:\n            print(f"[URGENCE] {reason}")\n            from alert_system import AlertSystem\n            AlertSystem().send_alert(level=2, reason=reason)\n        time.sleep(0.2)\nexcept KeyboardInterrupt:\n    pass\nfinally:\n    stream.release()\n    print("[EMOTION] Arr\u00eat.")\n'''
-        
+
+        # --- Déterminer quel interpréteur Python utiliser ---
+        emotion_python = os.getenv("EMOTION_VENV_PYTHON", "").strip()
+        if emotion_python and os.path.isfile(emotion_python):
+            python_exe = emotion_python
+            log(f"  → Venv émotions : {python_exe}", Colors.DIM)
+        else:
+            python_exe = sys.executable
+            if emotion_python:
+                log(f"  ⚠️  EMOTION_VENV_PYTHON={emotion_python} introuvable, utilisation du Python courant.", Colors.YELLOW)
+            else:
+                log(f"  → Pas de venv séparé (EMOTION_VENV_PYTHON non défini)", Colors.DIM)
+
         launcher_path = self.base_dir / "emotion_detection" / "_run_emotion.py"
-        with open(launcher_path, 'w', encoding='utf-8') as f:
-            f.write(launcher_code)
-        
-        cmd = [sys.executable, "_run_emotion.py"]
+        cmd = [python_exe, str(launcher_path)]
         cwd = self.base_dir / "emotion_detection"
         log_f = self._open_log("emotion_detection")
-        
+
+        # Passer les variables d'environnement pertinentes au subprocess
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(self.base_dir)  # pour les imports cross-modules
+
         kwargs = {
             'cwd': cwd,
             'stdout': log_f,
             'stderr': log_f,
+            'env': env,
         }
         if self.is_windows:
             kwargs['shell'] = True
             kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs['start_new_session'] = True
-        
+
         process = subprocess.Popen(cmd, **kwargs)
         self.processes.append(("Emotion Detection", process))
         time.sleep(3)
-        
+
         if process.poll() is not None:
             log_service("Emotion", f"✗ Crash (code {process.returncode}) — voir logs/emotion_detection.log", Colors.RED)
             try:
@@ -289,7 +305,7 @@ class MediBotLauncher:
                 pass
         else:
             log_service("Emotion", "✓ Détection émotions + urgences active", Colors.GREEN)
-        
+
         return process
 
     def start_frontend(self):

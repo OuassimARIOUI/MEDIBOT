@@ -107,6 +107,7 @@ def send_alert_to_dashboard(
         "room_number": room_number,
         "message": message,
         "alert_type": alert_type,
+        "severity": "high",
         "timestamp": datetime.now().isoformat(),
         "status": "ACTIVE"
     }
@@ -178,13 +179,8 @@ def trigger_emergency_alert(
     if user_message:
         full_message = f"{message} - Patient dit: '{user_message}'"
     
-    # 1. Sauvegarder l'alerte dans la base de données locale
-    alert_id = save_alert_to_db(
-        patient_id, room_number, patient_name, full_message,
-        alert_type="emergency", severity=severity
-    )
-    
-    # 2. Envoyer l'alerte au dashboard Flask
+    # Envoyer l'alerte au dashboard Flask (source unique de vérité).
+    # Le dashboard Flask insère dans la DB → pas de double insertion.
     dashboard_success = send_alert_to_dashboard(
         patient_id=patient_id,
         room_number=room_number,
@@ -192,6 +188,15 @@ def trigger_emergency_alert(
         message=full_message,
         alert_type="URGENCE"
     )
+
+    # Fallback : si le serveur Flask est down, sauvegarder localement
+    alert_id = None
+    if not dashboard_success:
+        print("[ALERT] Fallback → sauvegarde locale dans la DB.")
+        alert_id = save_alert_to_db(
+            patient_id, room_number, patient_name, full_message,
+            alert_type="emergency", severity=severity
+        )
     
     return {
         "success": True,

@@ -328,13 +328,13 @@ def get_alert_details(alert_id):
             SELECT 
                 a.alert_id as id,
                 a.patient_id,
-                'general' as alert_type,
-                'medium' as severity,
+                COALESCE(a.alert_type, 'general') as alert_type,
+                COALESCE(a.severity, 'medium') as severity,
                 a.message,
                 a.created_at as timestamp,
-                0 as handled,
-                NULL as handled_at,
-                NULL as handled_by,
+                a.handled,
+                a.handled_at,
+                a.handled_by,
                 p.first_name || ' ' || p.last_name as patient_name,
                 p.room_number,
                 p.age
@@ -402,8 +402,11 @@ def get_alert_stats():
         cursor.execute("SELECT COUNT(*) as count FROM alerts")
         total = cursor.fetchone()["count"]
         
-        # All alerts are unhandled in this schema
-        unhandled = total
+        # Unhandled alerts
+        cursor.execute("SELECT COUNT(*) as count FROM alerts WHERE handled = 0")
+        unhandled = cursor.fetchone()["count"]
+        
+        handled = total - unhandled
         
         # Recent alerts (last 24 hours)
         cursor.execute("""
@@ -413,6 +416,14 @@ def get_alert_stats():
         """)
         recent_24h = cursor.fetchone()["count"]
         
+        # By severity
+        cursor.execute("""
+            SELECT COALESCE(severity, 'medium') as sev, COUNT(*) as count
+            FROM alerts WHERE handled = 0
+            GROUP BY sev
+        """)
+        by_severity = {row["sev"]: row["count"] for row in cursor.fetchall()}
+        
         conn.close()
         
         return jsonify({
@@ -420,8 +431,8 @@ def get_alert_stats():
             "stats": {
                 "total_alerts": total,
                 "unhandled_alerts": unhandled,
-                "handled_alerts": 0,
-                "by_severity": {"medium": unhandled},
+                "handled_alerts": handled,
+                "by_severity": by_severity,
                 "recent_24h": recent_24h
             }
         })

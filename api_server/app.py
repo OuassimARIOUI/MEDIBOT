@@ -5,6 +5,16 @@ from flask_cors import CORS
 import os
 import sys
 
+# Charger les variables d'environnement (.env) — même fichier que Rasa/voice_bridge
+try:
+    from dotenv import load_dotenv
+    from pathlib import Path
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    if _env_path.exists():
+        load_dotenv(dotenv_path=_env_path)
+except ImportError:
+    pass
+
 # Import route blueprints
 from alert_routes import alerts_bp
 from patient_routes import patients_bp
@@ -30,11 +40,18 @@ def create_app():
     
     # Configuration
     app.config['JSON_AS_ASCII'] = False  # Support French characters
-    app.config['DATABASE_PATH'] = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        'database',
-        'medibot.db'
-    )
+
+    # Base de données : même logique que rasa_bot/actions/db_utils.py
+    # pour éviter que Flask et Rasa lisent/écrivent dans des DB différentes.
+    _base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _db_env = os.getenv("DB_PATH")
+    if _db_env:
+        if os.path.isabs(_db_env):
+            app.config['DATABASE_PATH'] = _db_env
+        else:
+            app.config['DATABASE_PATH'] = os.path.join(_base_dir, _db_env)
+    else:
+        app.config['DATABASE_PATH'] = os.path.join(_base_dir, 'database', 'medibot.db')
     
     # Register blueprints
     app.register_blueprint(alerts_bp, url_prefix='/api/alerts')

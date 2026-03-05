@@ -152,33 +152,70 @@ def play_audio(wav_path: str) -> None:
 
 
 def _play_audio_pepper(wav_path: str) -> None:
-    """Joue un WAV via ALAudioPlayer de Pepper."""
+    """Joue un WAV via ALAudioPlayer de Pepper.
+    
+    Étapes :
+    1. Transfert du fichier WAV vers Pepper via SFTP (paramiko) ou SCP
+    2. Lecture sur le haut-parleur du robot via ALAudioPlayer.playFile()
+    """
     session = _get_pepper_session()
     if session is None:
         print("[PEPPER AUDIO] Pas de session NAOqi, fallback PC.")
         _play_audio_pc(wav_path)
         return
+
+    remote_path = "/home/nao/medibot_song.wav"
+
+    # --- Étape 1 : Transférer le fichier WAV vers Pepper ---
+    transferred = False
+    # Tenter SFTP via paramiko (plus fiable que scp, surtout sur Windows)
+    try:
+        import paramiko
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(PEPPER_IP, port=22, username="nao", password="nao", timeout=5)
+        sftp = ssh.open_sftp()
+        sftp.put(wav_path, remote_path)
+        sftp.close()
+        ssh.close()
+        transferred = True
+        print(f"[PEPPER AUDIO] ✅ Fichier transféré via SFTP → {remote_path}")
+    except ImportError:
+        print("[PEPPER AUDIO] paramiko non installé, tentative SCP...")
+    except Exception as e:
+        print(f"[PEPPER AUDIO] SFTP échoué ({e}), tentative SCP...")
+
+    # Fallback SCP si paramiko indisponible ou échoué
+    if not transferred:
+        try:
+            import subprocess
+            scp_result = subprocess.run(
+                ["scp", "-o", "StrictHostKeyChecking=no",
+                 "-o", "UserKnownHostsFile=/dev/null",
+                 wav_path, f"nao@{PEPPER_IP}:{remote_path}"],
+                capture_output=True, timeout=15
+            )
+            if scp_result.returncode == 0:
+                transferred = True
+                print(f"[PEPPER AUDIO] ✅ Fichier transféré via SCP → {remote_path}")
+            else:
+                print(f"[PEPPER AUDIO] SCP échoué: {scp_result.stderr.decode(errors='ignore')}")
+        except Exception as e:
+            print(f"[PEPPER AUDIO] SCP erreur : {e}")
+
+    if not transferred:
+        print("[PEPPER AUDIO] ⚠️ Impossible de transférer le fichier, fallback PC.")
+        _play_audio_pc(wav_path)
+        return
+
+    # --- Étape 2 : Jouer sur le robot via ALAudioPlayer ---
     try:
         audio_player = session.service("ALAudioPlayer")
-        # Pepper a besoin du chemin local sur le robot ou une URL.
-        # On copie le fichier sur Pepper via SCP puis on le joue.
-        remote_path = "/home/nao/medibot_song.wav"
-        import subprocess
-        scp_result = subprocess.run(
-            ["scp", "-o", "StrictHostKeyChecking=no", wav_path,
-             f"nao@{PEPPER_IP}:{remote_path}"],
-            capture_output=True, timeout=10
-        )
-        if scp_result.returncode != 0:
-            print(f"[PEPPER AUDIO] SCP échoué, fallback PC.")
-            _play_audio_pc(wav_path)
-            return
-
-        file_id = audio_player.loadFile(remote_path)
-        audio_player.play(file_id)
+        # playFile() est bloquant et joue le fichier directement
+        audio_player.playFile(remote_path)
         print(f"[PEPPER AUDIO] 🔊 Robot joue la musique.")
     except Exception as e:
-        print(f"[PEPPER AUDIO] Erreur ({e}), fallback PC.")
+        print(f"[PEPPER AUDIO] Erreur lecture ({e}), fallback PC.")
         global _pepper_session
         _pepper_session = None
         _play_audio_pc(wav_path)

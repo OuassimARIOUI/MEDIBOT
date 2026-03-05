@@ -14,9 +14,27 @@ BUG CORRIGE 8 :
 import os
 import time
 import logging
-from deepface import DeepFace
 
 logger = logging.getLogger(__name__)
+
+# Import paresseux de DeepFace : évite de casser les autres modules
+# (Rasa, Whisper, etc.) si deepface n'est pas installé dans cet env.
+_deepface = None
+
+def _get_deepface():
+    global _deepface
+    if _deepface is None:
+        try:
+            from deepface import DeepFace as _df
+            _deepface = _df
+        except ImportError:
+            raise ImportError(
+                "deepface n'est pas installé. "
+                "Installez-le séparément : pip install deepface==0.0.79\n"
+                "Ou lancez la détection d'émotions dans un venv dédié "
+                "(voir README emotion_detection)."
+            )
+    return _deepface
 
 # Interval minimum entre deux réactions pour la même émotion (secondes)
 REACTION_COOLDOWN = 30
@@ -33,8 +51,11 @@ class EmotionDetector:
     def analyze_emotion(self, frame):
         """Retourne l'émotion dominante ('happy', 'sad', ...) ou 'unknown'."""
         try:
-            results = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
+            df = _get_deepface()
+            results = df.analyze(frame, actions=['emotion'], enforce_detection=False)
             return results[0]['dominant_emotion']
+        except ImportError:
+            raise  # Remonter l'erreur d'import
         except Exception as e:
             logger.debug(f"EmotionDetector: erreur analyse ({e})")
             return "unknown"
