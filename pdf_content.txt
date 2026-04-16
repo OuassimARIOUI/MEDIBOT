@@ -1,0 +1,437 @@
+Cahierdescharges
+MEDIBOT
+M1ILSENetIA
+BOUKRAAAsma
+MohamedAchrafOuassimARIOUI04/01/2026
+Responsable
+FabriceLefevreMASTER
+ILSENetINTELLIGENCEARTIFICIELLE
+UEUEPROJETD’INNOVATION
+ECUEUEAMSPROJET-Interactionsvocaleshumain-robot
+CahierdeschargesMEDIBOT
+Sommaire
+Titre 1
+Sommaire 2
+1 ContexteetObjectifsduProjet 4
+1.1 Contexte ............................................4
+1.2 Objectifs ............................................4
+2 PérimètreduProjet 4
+2.1 Fonctionnalitésattendues .................................4
+2.2 Technologiesutilisées ....................................4
+2.3 Interactionvocaleaveclepatient ............................4
+2.4 Rondenocturneproactive .................................5
+2.5 Protocoledequestionssanté/confort ..........................5
+2.6 Détectiond’absencederéponseetanalysevitaleapparente ...........5
+2.7 Détectiond’étatémotionnel/détresse .........................5
+2.8 G.................................................5
+2.9 Notificationdupersonnelsoignant ............................6
+2.10 Comportementencasd’urgencecritique .......................6
+2.11 Journalisationettraçabilité ................................6
+2.12 Limitesréglementairesetéthiques ............................6
+3 FonctionnalitésAvancées 6
+3.1 Modedégradé(FailoverMode) ..............................6
+3.2 Tableaudebordinfirmier(Dashboardminimal) ....................6
+3.3 AnalysedesrisquesIAetgestiondeserreurs ......................7
+4 Schémaconversationneldelarondenocturne 8
+5 Tests 9
+5.1 TestsduchatbotRASA ....................................9
+5.2 TestsunitairesdesactionsPython .............................9
+5.3 Testsunitairesdel’APIFlask .................................10
+5.4 TestsdumoduleSpeech-to-Text(Whisper) .......................10
+5.5 Objectifsdestestsutilisateurs ...............................10
+5.6 Méthodologie .........................................10
+6 PublicCible 10
+6.1 Profildesutilisateurs .....................................10
+6.2 Nombred’utilisateurspourlestests ............................11
+7 ScénariosdeTestsUtilisateurs 11
+7.1 Objectifsdestests ......................................11
+7.2 Scénariosdetests ......................................11
+8 CritèresdeRéussiteetÉvaluations 11
+8.1 Indicateurs(KPI) ........................................11
+8.2 Feedback ............................................11
+2/13
+CahierdeschargesMEDIBOT
+9 ContraintesetRisques 11
+9.1 Contraintestechniques ...................................11
+9.2 Risques .............................................11
+10 PlanningPrévisionnel 11
+10.1 Phase1—DéveloppementduchatbotRASA(01/02 →20/02)...........12
+10.2Phase2—ImplémentationdumoduleSpeech-to-Text(Whisper)(24/02 →
+05/03)..............................................12
+10.3Phase3—Développementrobotique(Pepper,NAOqi,Choregraphe)(09/03 →
+02/04)..............................................12
+10.4Phase4—Détectiondesémotions(caméra+DeepFace/OpenCV)(06/04 →
+20/04)..............................................12
+10.5 Phase5—Intégrationcomplètedesmodules(24/04 →01/05)..........12
+10.6 Phase6—Testsutilisateurs(05/05 →10/05)......................12
+10.7Phase7—Rédactiondurapport&préparationdelasoutenance(10/05 →
+15/05)..............................................12
+10.8 DiagrammedeGantt ....................................13
+10.9 Répartitiongénéraledesrôles ...............................13
+3/13
+CahierdeschargesMEDIBOT
+Sommaire
+1 ContexteetObjectifsduProjet
+1.1 Contexte
+Dansleshôpitaux,lepersonneldenuitestsouventlimitéetdoitrépondreàdenombreuses
+sollicitationsdespatients.
+L’idéedeMediBotestdedéployerunrobothumanoïdePeppercapabled’apporterun
+premierniveaud’interactionvocaleaveclespatients.
+Lerobotpermetd’améliorerleconfort,deréduirel’isolementetd’optimiserletempsdu
+personnelsoignant.
+1.2 Objectifs
+• Développerunchatbotvocalembarquédansunrobothumanoïde.
+•Répondreàdesquestionssimplesdespatients(heure,infoshospitalières,c’estquand
+laprochainedosedumedicament,c’estquandvousallerrepasser).
+•Rassurerlespatientsparunediscussionsociale(estcequecava,blagues,musique,
+motsréconfortants).
+•Alerterlepersonnelsoignantencasdedemandeurgenteoudesituationanormale
+détectée(absencederéponse,malaise,détresseémotionnelle,arrêtrespiratoireap-
+parent).
+2 PérimètreduProjet
+2.1 Fonctionnalitésattendues
+•Interactionsvocalesbasiques :répondreà«Quelleheureest-il?»,«Queljouronest?
+»,«Jepeuxsortirquand?»
+•Supportémotionnel :raconteruneblague,proposerunemusiqueapaisante.
+•Aideauxpatients :rappelerlaprisedemédicaments(basededonnéesfactice).
+•Communication :possibilitédetransmettreunmessageouunealerteàunsoignant.
+•Gestuelle:hochementsdetête,mouvementsdebraspourhumaniserl’interaction.
+2.2 Technologiesutilisées
+•Chatbot:RASA,RASA-X(APIREST).
+•Langage:Python(actions,API),Flask,Pytest.
+•Robot:Pepper,NAOqi,ChoregrapheSuite2.5.10.
+•Speech-to-text :OpenAIWhisper.
+•Text-to-speech :moteurvocalPepper.
+•Basededonnéesfactice :planningmédicamentseturgences,SQLite.
+•IA:gestiondedialogue(TEDPolicy),apprentissageparrenforcement(optionnelavec
+TensorFlow/Keras).
+2.3 Interactionvocaleaveclepatient
+• Comprendreetrépondreàdesdemandessimples.
+• Utiliserlareconnaissanceetlasynthèsevocale.
+•Module:ALTextToSpeech,microdePepper,RASANLU,FlaskAPI.
+4/13
+CahierdeschargesMEDIBOT
+2.4 Rondenocturneproactive
+Peppereffectuepériodiquementdes rondesdenuitdansleservice,ilpasserasachaque
+foisquel’aidesoignantluideclancherasuneronde.
+Dialoguedecheck-up:
+1. Présentationcalme:«Bonsoir,c’estPepper,jeviensvérifiercommentvousallez.»
+2. Questionsstandardisées:douleur,respiration,stress,besoind’aide.
+3. Analysedesréponses+observationfaciale.
+Outils:ALNavigation,ALVideoDevice,micro,RASANLU,NAOqiPython,planificationinterne
+(cron/timer).
+2.5 Protocoledequestionssanté/confort
+Questionsposéesàchaqueronde:
+• «Avez-vousmalquelquepart?»
+• «Avez-vousdumalàrespirer?»
+• «Êtes-vousstressé(e)ouinquiet/inquiète?»
+• «Souhaitez-vousqu’uneinfirmièreviennemaintenant?»
+Analyseautomatiquedesréponses;classificationentroisniveaux:
+RAS/àsurveiller/urgencevitale.
+Outils:micro,Speech-to-Text,RASAintents(douleur,détresse,urgence),scriptdedécision
+Python.
+2.6 Détectiond’absencederéponseetanalysevitaleapparente
+Silepatientnerépondpas,Pepper:
+1. Répèteunefoislasollicitationvocale.
+2.Analysevisuelleduthorax(camérafrontale)pendant10s:mouvement=respiration;
+absence=suspicion.
+3. Vérifielaposture(allongénormal/chute/penché).
+Classelescas:
+• respirationnormale →probablesommeil,pasd’alerte;
+• respirationabsenteoupostureanormale →alerte.
+Outils:ALVideoDevice,OpenCV/fluxoptique,Python,LED/voixpourretourvisuel.
+Peppernedéclarejamaisundécès ,ilsignale«urgencevitalepotentielle».
+2.7 Détectiond’étatémotionnel/détresse
+Analyseduvisageetdutondelavoixpouridentifier:joie,peur,douleur,angoisse.
+Siincohérenceentreparoleetémotion →alertemoyenne(“patientanxieux”).
+Outils:ALFaceDetection,ALMood,ALFaceCharacteristics,caméraRGB.Micropourprosodie.
+ScriptPythonfusionnantdonnéesvisuellesetsonores.
+2.8 G
+estiondesniveauxd’alerte Outils:moteurderèglesPython;baseSQLitelocale;commu-
+NiveauSignification Action
+0RAS aucuneaction,simplelog
+1àsurveiller notificationstandardaupersonnel
+2urgencevitalepotentielle alerteimmédiate+arrêtdelaronde
+nicationHTTPPOSTversserveurinfirmier.
+5/13
+CahierdeschargesMEDIBOT
+2.9 Notificationdupersonnelsoignant
+Envoid’unealertestructurée: chambre,heure,motif,niveaupriorité .
+Modes:
+• réseaulocal:APIREST/dashboardinfirmier;
+• modedégradé:signalLED/messagevocal.
+Outils:Flaskserveurinterne,Wi-Fisécurisé,NAOqiHTTPrequest.
+2.10 Comportementencasd’urgencecritique
+Pepper:
+• resteprèsdulit,
+• répètecalmement:«Jevaischercherquelqu’untoutdesuite.»,
+• allumeLEDsrouges,
+• interromptsaronde.
+Outils:ALMotion,ALAutonomousLife,contrôleLED,ALTextToSpeech.
+2.11 Journalisationettraçabilité
+Stockerpourchaquepassage:heure,chambre,statut,alerte?
+Base:SQLitelocale(aucunedonnéemédicalesensible).
+Consultationparpersonnelautoriséuniquement.
+2.12 Limitesréglementairesetéthiques
+• Aucunedéclarationdedécès.
+• Aucundiagnosticmédical.
+• Donnéesaudio/vidéotraitéeslocalement(RGPD).
+• Annonceexplicitedesintentions(“Jeviensvérifiervotreétat”).
+• Pasdecontactphysiqueaveclepatient.
+• Prioritéàlasécuritéetàlatransparence.
+3 FonctionnalitésAvancées
+3.1 Modedégradé(FailoverMode)
+Afindegarantirunecontinuitédeservicedanslecontextesensibled’unservicehospitalier
+denuit,MediBotintégreraun modedégradé permettantdemaintenirdesinteractions
+essentiellesmêmeencasdepanned’unouplusieursmodules.
+Lemodedégradécouvrelessituationssuivantes:
+•PannedumoduleSpeech-to-Text(Whisper) →Lerobotpasseautomatiquementen
+mode“commandessimples”utilisantdesréponsesfermées(Oui/Non/Répéter).
+•Indisponibilitédumodulecaméra →Ladétectiond’émotionsetl’analyserespiratoire
+sonttemporairementdésactivées,sansbloquerlarondeoulerestedudialogue.
+•ErreurduserveurdedialogueRASA →Pepperutiliseunensembleminimaldephrases
+pré-enregistréespourrassurerlepatient(ex.«Jesuislàsivousavezbesoindemoi.»).
+Objectif:AssurerqueMediBotrestefonctionneletrassurantdanstouteslessituations,même
+encasdedéfaillancepartielledusystème.
+3.2 Tableaudebordinfirmier(Dashboardminimal)
+Uneinterfacewebsimple(baséesurFlask)seramiseàdispositiondupersonnelsoignant
+afindefaciliterlesuividurobotetdesalertesgénérées.
+6/13
+CahierdeschargesMEDIBOT
+Ledashboardpermettrade:
+• visualiserles alertesencours etleurniveaudecriticité;
+•consulterl’historiquedesrondesnocturnes ,avecheuredepassageetétatdupatient;
+• afficherles éventuellesémotionsdétectées aucoursdel’interaction;
+• suivrelesinterventionsdéjàdéclenchées .
+Avantagesattendus :améliorationdelacoordinationentreMediBotetl’équipesoignante;
+visibilitésurlesévénementsnocturnes;meilleuretraçabilitédesinteractionspatient-robot.
+3.3 AnalysedesrisquesIAetgestiondeserreurs
+Danslecadredel’utilisationdemodulesd’intelligenceartificielle(RASA,Whisper,Deep-
+Face),uneanalysedesrisquesliésàl’IA seraréaliséeafind’identifierleslimitestechniques
+etleursimpactspotentielssurlasécuritédupatient.
+Lesprincipauxrisquesétudiésincluront:
+• Erreurdecompréhensionvocaledueaubruitambiantnocturne;
+•Mauvaiseclassificationd’émotion,pouvantmeneràunefaussealerteouàl’absence
+d’alerte;
+• Fauxpositifs/fauxnégatifsdansladétectionderespiration;
+•Erreurd’interprétationdudialoguedanslesintentscritiques(douleur,détresse,urgence).
+Desmécanismesdecompensationserontintégrés,parexemple:
+•confirmationsystématiquedesphrasescritiques:«Voulez-vousquej’appelleunsoi-
+gnant?»
+• doublevérificationavantunealerteniveau2;
+• basculeautomatiqueenmodedégradéencasdedoute.
+Objectif:Garantiruncomportementfiable,sécurisantettransparentdurobotdansun
+cadremédical.
+7/13
+CahierdeschargesMEDIBOT
+4 Schémaconversationneldelarondenocturne
+��� [DÉBUT DE RONDE NOCTURNE]
+�
+���Robot : (entre dans la chambre)
+� • Ouvre la porte (ALMotion + planification)
+� • Active caméra et micro
+� • LED vertes (mode calme)
+�
+���Robot : "Bonsoir, c’est Pepper, je viens vérifier comment vous allez."
+�
+����� � Patient répond
+� �
+� ���"Ça va"
+� � ��� ��Robot : "Parfait. Souhaitez-vous que je vous chante quelque chose
+ou préférez-vous discuter ?"
+� � �
+� � ��� Si “Chanson” → Robot exécute behavior musique (LED bleues)
+� � ��� Si “Discuter” → Robot : "Avez-vous des questions à me poser ?"
+� � � - “Quelle heure est-il ?” → réponse (via Python `datetime`)
+� � � - “Quel jour on est ?” → réponse (date)
+� � � - “Je peux sortir quand ?” → réponse générique (policy hospitalière)
+� � � - “C’est quand ma prochaine dose de médicament ?” → recherche dans BD factice
+� � � - “Peux-tu appeler mon infirmière ?” → alerte niveau 1 (Flask REST → personnel)
+� � �
+� � ��� Si “Non merci”
+� � � ��Robot : "Très bien, je vous laisse vous reposer. Bonne nuit !"
+� � � • Enregistre état : patient_state = stable
+� � � • LED vertes → mode veille
+� � �
+� � ��� � Retour au début de ronde suivante (cron)
+� �
+� ���"Non, ça ne va pas"
+� ��� ��Robot : "Souhaitez-vous que j’appelle l’équipe d’urgence ?"
+� �
+� ��� Si “Oui”
+� � �� Envoi d’alerte niveau 2 (urgence vitale potentielle)
+� � • Flask HTTP POST → serveur infirmier
+� � • LEDs rouges + message vocal :
+� � "Je vais chercher quelqu’un tout de suite."
+� � • Robot reste près du lit (ALAutonomousLife suspendue)
+� �
+� ��� Si “Non”
+� ��Robot : "Souhaitez-vous que je vous raconte une blague
+ou que je vous mette une musique apaisante ?"
+� - Si “Oui” → Behavior play_joke ou play_music
+� - Si “Non” → "Très bien, reposez-vous bien."
+� � Retour à la boucle de surveillance
+�
+��� [SI AUCUNE RÉPONSE APRÈS 10s]
+�
+�����Robot : "Je n’ai pas entendu de réponse, tout va bien ?"
+�
+��� Si toujours aucune réponse
+� • Active analyse visuelle
+� - Détection respiration (mouvement thorax)
+� - Vérification posture (caméra + OpenCV)
+�
+8/13
+CahierdeschargesMEDIBOT
+� ��� Respiration normale → log “sommeil probable” (niveau 0)
+� ��� Absence de respiration ou posture anormale
+� �� Alerte niveau 2 (urgence vitale potentielle)
+� LEDs rouges + message vocal :
+� "Je vais chercher quelqu’un tout de suite."
+�
+��� � Fin de séquence / journalisation
+5 Tests
+Cettesectiondécritlastratégiedetestsmiseenplacepourleprojet MediBot.Lestests
+portentexclusivementsurles moduleslogiciels ,indépendammentdurobotphysiquePepper,
+afindevaliderlalogique,larobustesseetlebonfonctionnementdusystème.
+Lestestsunitairessontréalisésàl’aidededonnéessimulées,decomposantsmockéset
+descénarioscontrôlés,conformémentauxbonnespratiqueseningénierielogicielleeten
+systèmesembarqués.
+5.1 TestsduchatbotRASA
+LestestsRASApermettentdevérifierlebonfonctionnementdumoteurconversation-
+nel,aussibienauniveaudelacompréhensiondulangagenaturelquedelagestiondes
+dialogues.
+5.1.1 Élémentstestés
+•Compréhensiondesintentions(intents).•Extractioncorrectedesentités.•Déclenchementdelabonneréponseoudelabonneaction.
+5.1.2 TestsNLU
+LestestsNLUpermettentd’évaluer:•Letauxdereconnaissancedesintentions.•Laconfusionentreintentionsproches(ex.discussionsocialevsdemandeurgente).
+Cestestssontréalisésàpartird’exemplesannotésetmesurésautomatiquementàl’aide
+desoutilsfournisparRASA.
+5.1.3 TestsCore(gestiondudialogue)
+Lestestsdumoteurdedialoguepermettentdevérifierque:•Unephraseexprimantuneurgencedéclenchecorrectementuneactiond’alerte.•Unediscussionsocialeourassurantenedéclencheaucunealerte.
+Cestestsvalidentlacohérencedesstories,desrèglesconversationnellesetducompor-
+tementglobalduchatbot.
+5.2 TestsunitairesdesactionsPython
+LesactionspersonnaliséesimplémentéesenPythonsonttestéesindépendammentdu
+chatbotafindegarantirlafiabilitédelalogiquemétier.
+9/13
+CahierdeschargesMEDIBOT
+5.2.1 Élémentstestés
+•Logiquemétierdesactions.•Règlesdedécision.•Calculetattributiondesniveauxd’alerte.
+Lestestspermettentnotammentdevérifierquelesdifférentescombinaisonsdesignaux
+(douleur,émotion,respiration,absencederéponse)conduisentauniveaud’alerteapproprié.
+5.3 Testsunitairesdel’APIFlask
+L’APIFlask,utiliséepourlagestiondesalertesetletableaudebordinfirmier,faitl’objet
+detestsunitairesspécifiques.
+5.3.1 Élémentstestés
+•FonctionnementdesendpointsREST.•Formatetstructuredesalertestransmises.•CodesderéponseHTTP(succès,erreur).
+CestestsgarantissentlafiabilitédeséchangesentreMediBotetlessystèmesdesuper-
+visiondupersonnelsoignant.
+5.4 TestsdumoduleSpeech-to-Text(Whisper)
+Important:laqualitéacoustiqueréellen’estpasévaluéedanslestestsunitaires.Lestests
+portentuniquementsurle pipelinedetranscription .
+5.4.1 Élémentstestés
+•Transformationd’unfichieraudiopré-enregistréentexte.•Gestiondeserreurs(fichiermanquant,audiocorrompu).•Tempsderéponseacceptablepourunusageencontextehospitalier.
+5.5 Objectifsdestestsutilisateurs
+•Vérifierlacompréhensiondelavoixdansunenvironnementbruité(nuit,couloir).•Validerlapertinencedesréponses.•Testerlacapacitédurobotàrassurerl’utilisateur.
+Cestestspermettentdes’assurerquelemoduleWhispers’intègrecorrectementdansla
+chaînedetraitementdudialogue.
+5.6 Méthodologie
+LaméthodologiedetestduprojetMediBotreposesurdeuxapprochescomplémentaires:•Testsmodérés :desétudiantsjouentlerôledepatients,permettantuneobservation
+encadréedesinteractionsetuneanalysedétailléeducomportementdurobot.•Testsnonmodérés :lerobotestlaisséàdispositionetfonctionnedemanièreautonome,
+afind’évaluersoncomportementdansdesconditionsd’utilisationprochesduréel.
+6 PublicCible
+6.1 Profildesutilisateurs
+• Patientshospitalisés(personnesâgéesouadultes,faiblecompétencenumérique).
+• Personnelsoignant(infirmiers,aides-soignants).
+10/13
+CahierdeschargesMEDIBOT
+6.2 Nombred’utilisateurspourlestests
+• Phaseexploratoire:3–4testeurs(simulationétudiants).
+• Phasedevalidation:6–8testeurs(simulation+encadrants).
+7 ScénariosdeTestsUtilisateurs
+7.1 Objectifsdestests
+• Vérifierlacompréhensiondelavoixdansunenvironnementbruité(nuit,couloir).
+• Validerlapertinencedesréponses.
+• Testerlacapacitédurobotàrassurerl’utilisateur.
+7.2 Scénariosdetests
+• Demanderl’heureactuelle.
+• Demanderunrappeldemédicament.
+• Demanderàappelerunsoignant.
+• Demanderuneblagueouunemusiqueapaisante.
+8 CritèresdeRéussiteetÉvaluations
+8.1 Indicateurs(KPI)
+• Tauxderéussite:>60%.
+• Tempsderéponsemoyen<15secondes.
+• Satisfactionutilisateur ≥3/5.
+8.2 Feedback
+• QuestionnairesLikert1–5(compréhension,réassurance,utilité).
+• Interviewsrapidesaveclestesteurs.
+9 ContraintesetRisques
+9.1 Contraintestechniques
+• Latencecloud(GoogleSpeech).
+• Disponibilitélimitéedurobot.
+• Basededonnéesfictivepourtests.
+9.2 Risques
+• Bruitambiantperturbantlareconnaissancevocale.
+• Bugsd’intégrationRASA ↔Pepper.
+• Retarddanslamiseenplacedesscénariosréalistes.
+10 PlanningPrévisionnel
+LedéveloppementduprojetMediBots’étendsurlapériode du1erfévrierau15mai ,
+correspondantàladuréedusemestre2.
+Leplanningestorganiséen phasesdessprintssuccessives ,chacunesuiviede testsunitaires
+11/13
+CahierdeschargesMEDIBOT
+obligatoires(2à3jours)afind’assurerlaqualitéavantdepoursuivrel’intégration.
+LediagrammedeGanttci-dessousprésentelaplanificationdétailléedel’ensembledu
+projet.
+10.1 Phase1—DéveloppementduchatbotRASA(01/02 →20/02)
+• Créationdesintents,entités,storiesetrègles.
+• ImplémentationdesactionsPython(médicaments,alertes,émotions).
+• Testsunitaires:21/02 →23/02
+10.2Phase2—ImplémentationdumoduleSpeech-to-Text(Whisper)(24/02 →
+05/03)
+• Captureaudio,transcriptionlocaleWhisper.
+• Envoiautomatiquedesmessagestranscritsversl’APIRESTRASA.
+• Testsunitaires:06/03 →08/03
+10.3Phase3—Développementrobotique(Pepper,NAOqi,Choregraphe)(09/03 →
+02/04)
+• Voixdurobot(TTS),mouvements,gestesapaisants.
+• ContrôledesLEDsetcomportementscontextuels.
+• ScriptsNAOqietscénariosChoregraphe.
+• Testsunitaires:03/04 →05/04
+10.4Phase4—Détectiondesémotions(caméra+DeepFace/OpenCV)(06/04 →
+20/04)
+• Analyseduvisageetdutondelavoix.
+• Détectiondetristesse,stress,douleur,inquiétude.
+• IntégrationaveclesslotsRASA.
+• Testsunitaires:21/04 →23/04
+10.5 Phase5—Intégrationcomplètedesmodules(24/04 →01/05)
+•Chaînecomplète:patient →Whisper →RASA→robot→basededonnées →alerte.
+• Intégrationduscénarioderondenocturne.
+• Testsd’intégration:02/05 →04/05
+10.6 Phase6—Testsutilisateurs(05/05 →10/05)
+• Patientssimulés(étudiants).
+•Validationdelacompréhensionvocale,delapertinencedesréponses,etduniveau
+deréassurancedurobot.
+10.7Phase7—Rédactiondurapport&préparationdelasoutenance(10/05 →
+15/05)
+• Rapportcomplet(méthodes,résultats,architecture).
+• Préparationdelaprésentationfinale.
+• Vidéodémonstrativedurobotensituationréelle.
+12/13
+CahierdeschargesMEDIBOT
+10.8 DiagrammedeGantt
+Figure1.Diagrammedeganttquicontienlesphasesdedev+lestests
+LediagrammedeGanttillustrel’ensembledesphases,leursdurées,leursdépendances
+etlespériodesdetestsunitaires.
+10.9 Répartitiongénéraledesrôles
+BOUKRAAAsma:intervientsurledéveloppementdusystèmeconversationneletvocal,
+lalogiquedécisionnelle,l’intégrationdesmoduleslogicielsainsiquelamiseenplaceet
+l’analysedestests.
+ARIOUIMohamedAchrafOuassim:intervientsurl’intégrationrobotiquedePepper,les
+comportementsphysiquesetvisuels,lacommunicationaveclesmoduleslogiciels,ainsique
+ladémonstration,lavalidationfinaleetlaprésentationduprojet.
+Leschoixd’architecture,l’intégrationglobale,lestestsfinauxetlavalidationduprojet
+sontréalisésconjointement.
+13/13
