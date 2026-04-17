@@ -4,6 +4,25 @@ import mediapipe as mp
 import time
 
 class EmergencyDetector:
+    # --- Paramètres de détection de respiration ---
+    # Nombre de frames conservées dans l'historique de mouvement
+    MOTION_HISTORY_SIZE = 30
+    # Seuil adaptatif : mouvement = médiane + ADAPTIVE_K * écart-type
+    # Un mouvement en-dessous de ce seuil dynamique est considéré nul.
+    ADAPTIVE_K = 1.5
+    # Seuil plancher absolu (évite les faux positifs en cas de bruit pur)
+    MIN_MOTION_THRESHOLD = 0.008
+    # Ratio minimum de frames "en mouvement" dans l'historique
+    # pour considérer que le patient respire.
+    BREATHING_RATIO = 0.2
+    # Paramètres CLAHE pour l'égalisation en basse lumière
+    CLAHE_CLIP_LIMIT = 3.0
+    CLAHE_TILE_SIZE = (8, 8)
+    # Marge verticale sous les épaules pour la ROI thorax (fraction de la hauteur)
+    CHEST_DEPTH_RATIO = 0.18
+    # Marge horizontale ajoutée de chaque côté des épaules (fraction de la largeur)
+    CHEST_PAD_X_RATIO = 0.03
+
     def __init__(self):
         # Initialisation MediaPipe pour les mains et la posture
         self.mp_pose = mp.solutions.pose
@@ -13,6 +32,17 @@ class EmergencyDetector:
         self.prev_roi_gray = None
         self.motion_history = []
         self.last_check_time = time.time()
+        # CLAHE créé paresseusement au premier appel de detect_breathing
+        self._clahe = None
+
+    def _get_clahe(self):
+        """Crée l'objet CLAHE au premier appel (évite crash si cv2 incomplet)."""
+        if self._clahe is None:
+            self._clahe = cv2.createCLAHE(
+                clipLimit=self.CLAHE_CLIP_LIMIT,
+                tileGridSize=self.CLAHE_TILE_SIZE,
+            )
+        return self._clahe
 
     def analyze_frame(self, frame):
         """Analyse complète : Respiration + Étouffement."""
@@ -44,7 +74,20 @@ class EmergencyDetector:
         return emergency_detected, reason
 
     def detect_breathing(self, frame, landmarks=None):
-        """Calcule le mouvement moyen dans la zone du buste identifiée par l'IA."""
+        """
+        Détection de respiration robuste pour caméra Pepper en basse lumière.
+
+        Améliorations par rapport à la version initiale :
+        1. CLAHE : égalisation adaptative du contraste (résout le bruit en basse lumière).
+        2. ROI élargie + padding : réduit l'impact des vêtements en intégrant
+           une zone de peau (cou/épaules) dans le calcul.
+        3. Seuillage adaptatif : le seuil de mouvement est calculé dynamiquement
+           à partir de la médiane + K * écart-type de l'historique, au lieu d'un
+           seuil arbitraire fixe.  Cela s'adapte au bruit propre de la caméra.
+        4. Ratio de frames actives : au lieu de comparer la moyenne au seuil, on
+           compte le pourcentage de frames « en mouvement » dans la fenêtre.
+           Plus résilient aux pics de bruit isolés.
+        """
         h, w, _ = frame.shape
         
         try:
@@ -52,33 +95,55 @@ class EmergencyDetector:
             shoulder_left = landmarks[11]
             shoulder_right = landmarks[12]
             
-            # Définition de la zone de calcul (ROI) sur le haut du buste
+            # --- ROI élargie : épaules → bas du thorax, avec marge latérale ---
             y1 = int(shoulder_left.y * h)
-            y2 = int((shoulder_left.y + 0.15) * h) # On descend de 15% sous les épaules
-            x1 = int(min(shoulder_left.x, shoulder_right.x) * w)
-            x2 = int(max(shoulder_left.x, shoulder_right.x) * w)
+            y2 = int((shoulder_left.y + self.CHEST_DEPTH_RATIO) * h)
+            pad_x = int(self.CHEST_PAD_X_RATIO * w)
+            x1 = max(0, int(min(shoulder_left.x, shoulder_right.x) * w) - pad_x)
+            x2 = min(w, int(max(shoulder_left.x, shoulder_right.x) * w) + pad_x)
             
             roi = frame[y1:y2, x1:x2]
-            if roi.size == 0: return True # On ne déclare pas d'urgence si on perd la zone
+            if roi.size == 0:
+                return True  # On ne déclare pas d'urgence si on perd la zone
             
-            # Prétraitement pour la précision : Gris + Flou pour ignorer le bruit
+            # --- Prétraitement basse lumière ---
+            # 1. Conversion en niveaux de gris
             gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            # 2. CLAHE : rehausse le contraste local (compense l'obscurité)
+            gray_roi = self._get_clahe().apply(gray_roi)
+            # 3. Flou gaussien : supprime le bruit haute fréquence (capteur + vêtements)
             gray_roi = cv2.GaussianBlur(gray_roi, (21, 21), 0)
             
             if self.prev_roi_gray is None or self.prev_roi_gray.shape != gray_roi.shape:
                 self.prev_roi_gray = gray_roi
                 return True
                 
-            # Calcul du flux optique entre l'image précédente et l'actuelle
-            flow = cv2.calcOpticalFlowFarneback(self.prev_roi_gray, gray_roi, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-            magnitude = np.mean(np.sqrt(flow[...,0]**2 + flow[...,1]**2))
+            # --- Flux optique dense (Farneback) ---
+            flow = cv2.calcOpticalFlowFarneback(
+                self.prev_roi_gray, gray_roi, None,
+                pyr_scale=0.5, levels=3, winsize=15,
+                iterations=3, poly_n=5, poly_sigma=1.2, flags=0,
+            )
+            magnitude = np.mean(np.sqrt(flow[..., 0]**2 + flow[..., 1]**2))
             
+            # --- Historique glissant ---
             self.motion_history.append(magnitude)
-            if len(self.motion_history) > 30: self.motion_history.pop(0)
+            if len(self.motion_history) > self.MOTION_HISTORY_SIZE:
+                self.motion_history.pop(0)
             self.prev_roi_gray = gray_roi
             
-            # Seuil de mouvement affiné : doit être > 0.02 pour être considéré comme vivant
-            return np.mean(self.motion_history) > 0.02
+            # --- Seuillage adaptatif ---
+            hist = np.array(self.motion_history)
+            adaptive_threshold = max(
+                np.median(hist) + self.ADAPTIVE_K * np.std(hist),
+                self.MIN_MOTION_THRESHOLD,
+            )
+            
+            # Ratio de frames « en mouvement » dans la fenêtre
+            active_frames = np.sum(hist > adaptive_threshold)
+            ratio = active_frames / len(hist)
+            
+            return ratio >= self.BREATHING_RATIO
         except Exception:
             return True
 
