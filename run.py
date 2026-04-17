@@ -618,8 +618,10 @@ class MediBotLauncher:
             except Exception as e:
                 log_service("Pepper", f"⚠️ Erreur déconnexion: {e}", Colors.RED)
         
+        # --- Phase 1 : SIGTERM gracieux sur tous les groupes de processus ---
+        still_alive = []
         for name, process in self.processes:
-            if process.poll() is None:  # Si le processus tourne encore
+            if process.poll() is None:
                 log_service(name, "Arrêt...", Colors.YELLOW)
                 try:
                     if self.is_windows:
@@ -629,11 +631,36 @@ class MediBotLauncher:
                         )
                     else:
                         os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                    process.wait(timeout=5)
-                    log_service(name, "✓ Arrêté", Colors.GREEN)
+                    still_alive.append((name, process))
+                except Exception:
+                    still_alive.append((name, process))
+        
+        # Attendre que les processus se terminent gracieusement (max 4s)
+        deadline = time.time() + 4
+        for name, process in still_alive:
+            remaining = max(0, deadline - time.time())
+            try:
+                process.wait(timeout=remaining)
+                log_service(name, "✓ Arrêté", Colors.GREEN)
+            except subprocess.TimeoutExpired:
+                pass
+        
+        # --- Phase 2 : SIGKILL forcé pour tout ce qui survit ---
+        for name, process in still_alive:
+            if process.poll() is None:
+                log_service(name, "Force kill...", Colors.RED)
+                try:
+                    if self.is_windows:
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                            capture_output=True
+                        )
+                    else:
+                        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                    process.wait(timeout=3)
+                    log_service(name, "✓ Forcé", Colors.YELLOW)
                 except Exception as e:
-                    log_service(name, f"⚠️ Erreur: {e}", Colors.RED)
-                    process.kill()
+                    log_service(name, f"⚠️ Impossible de tuer: {e}", Colors.RED)
     
     def run(self, connect_pepper=False):
         """Lance tous les services."""
@@ -655,6 +682,13 @@ class MediBotLauncher:
                 return
         
         log("\n🚀 Lancement des services...\n", Colors.GREEN)
+        
+        # Installer un handler de signal pour s'assurer que Ctrl+C tue tout
+        def _signal_handler(sig, frame):
+            raise KeyboardInterrupt
+        signal.signal(signal.SIGINT, _signal_handler)
+        if not self.is_windows:
+            signal.signal(signal.SIGTERM, _signal_handler)
         
         try:
             # Lancer les services dans l'ordre
@@ -713,7 +747,7 @@ class MediBotLauncher:
 
                             # Parler — appel bloquant, attend la fin de la phrase
                             log_service("TTS", "Robot parle maintenant...", Colors.CYAN)
-                            tts_svc.say("Bonjour ! Je suis Médi Bot. Connexion réussie.")
+                            tts_svc.say("\\vol=150\\ Bonjour ! Je suis Médi Bot. Connexion réussie.")
                             log_service("Test TTS", "✓ Le robot a parlé !", Colors.GREEN)
                         
                         if self.pepper_controller and self.pepper_controller.leds:
@@ -822,6 +856,8 @@ def main():
             while True:
                 time.sleep(5)
         except KeyboardInterrupt:
+            pass
+        finally:
             launcher.stop_all()
     else:
         # Modifier la méthode run pour respecter les flags

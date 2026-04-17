@@ -41,6 +41,9 @@ class PepperTTS:
         "zh": "Chinese"
     }
     
+    # Volume boost via NAOqi speech markup (100 = normal, up to 200)
+    VOLUME_BOOST = 120
+
     def __init__(self, session):
         """
         Initialize the TTS controller.
@@ -53,6 +56,7 @@ class PepperTTS:
         """
         self.session = session
         self.tts_service = None
+        self.animated_speech = None
         self.language = "French"  # Default language for medical context
         
         try:
@@ -82,6 +86,14 @@ class PepperTTS:
                 logger.info("ALTextToSpeech.setVolume → 1.0")
             except Exception as e:
                 logger.warning(f"ALTextToSpeech.setVolume failed: {e}")
+
+            # ALAnimatedSpeech est souvent plus fort que ALTextToSpeech
+            try:
+                self.animated_speech = self.session.service("ALAnimatedSpeech")
+                self.animated_speech.setBodyLanguageMode(0)  # 0 = disabled (voix seule)
+                logger.info("ALAnimatedSpeech service connected (body language OFF)")
+            except Exception as e:
+                logger.warning(f"ALAnimatedSpeech not available, using ALTextToSpeech only: {e}")
 
             # Set default parameters for medical context (clear and calm voice)
             self._configure_default_voice()
@@ -138,10 +150,21 @@ class PepperTTS:
             # Clean and prepare text
             clean_text = text.strip()
             
+            # Boost volume via NAOqi markup: \vol=N\ where N > 100 amplifies
+            boosted_text = f"\\vol={self.VOLUME_BOOST}\\ {clean_text}"
+            
             logger.info(f"Speaking: '{clean_text[:50]}{'...' if len(clean_text) > 50 else ''}'")
             
+            # Use ALAnimatedSpeech if available (louder output)
+            if self.animated_speech:
+                try:
+                    self.animated_speech.say(boosted_text)
+                    return True
+                except Exception:
+                    pass  # fallback to ALTextToSpeech below
+            
             # Synchronous speech (blocking until complete)
-            self.tts_service.say(clean_text)
+            self.tts_service.say(boosted_text)
             
             return True
             
@@ -174,10 +197,19 @@ class PepperTTS:
         try:
             clean_text = text.strip()
             
+            # Boost volume via NAOqi markup
+            boosted_text = f"\\vol={self.VOLUME_BOOST}\\ {clean_text}"
+            
             logger.info(f"Speaking (async): '{clean_text[:50]}{'...' if len(clean_text) > 50 else ''}'")
             
             # Asynchronous speech (non-blocking)
-            task_id = self.tts_service.post.say(clean_text)
+            if self.animated_speech:
+                try:
+                    task_id = self.animated_speech.post.say(boosted_text)
+                    return task_id
+                except Exception:
+                    pass
+            task_id = self.tts_service.post.say(boosted_text)
             
             return task_id
             

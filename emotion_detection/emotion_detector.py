@@ -85,7 +85,13 @@ class EmotionPipeline:
         if pepper_session is not None:
             try:
                 self._tts = pepper_session.service("ALTextToSpeech")
+                self._tts.setVolume(1.0)
                 self._tts.setLanguage("French")
+                try:
+                    audio_dev = pepper_session.service("ALAudioDevice")
+                    audio_dev.setOutputVolume(100)
+                except Exception:
+                    pass
                 self._leds = pepper_session.service("ALLeds")
                 logger.info("EmotionPipeline: services Pepper TTS + LEDs OK")
             except Exception as e:
@@ -197,7 +203,7 @@ class EmotionPipeline:
         """Fait parler Pepper (ALTextToSpeech) ou logge en mode PC."""
         if self._tts is not None:
             try:
-                self._tts.say(text)
+                self._tts.say(f"\\vol=150\\ {text}")
             except Exception as e:
                 logger.warning(f"TTS error: {e}")
         else:

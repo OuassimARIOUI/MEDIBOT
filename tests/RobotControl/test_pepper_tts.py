@@ -54,7 +54,10 @@ class TestPepperTTS(unittest.TestCase):
         result = tts.speak("Bonjour, comment allez-vous?")
         
         self.assertTrue(result)
-        self.mock_tts_service.say.assert_called_once_with("Bonjour, comment allez-vous?")
+        # animated_speech is used first (same mock), text has volume markup
+        self.mock_tts_service.say.assert_called_once_with(
+            "\\vol=150\\ Bonjour, comment allez-vous?"
+        )
     
     def test_speak_empty_text(self):
         """Test de speak avec texte vide."""
@@ -89,7 +92,9 @@ class TestPepperTTS(unittest.TestCase):
         result = tts.speak("  Bonjour  ")
         
         self.assertTrue(result)
-        self.mock_tts_service.say.assert_called_once_with("Bonjour")
+        self.mock_tts_service.say.assert_called_once_with(
+            "\\vol=150\\ Bonjour"
+        )
     
     def test_speak_error_handling(self):
         """Test de la gestion d'erreur lors du speak."""
@@ -108,7 +113,9 @@ class TestPepperTTS(unittest.TestCase):
         task_id = tts.speak_async("Message asynchrone")
         
         self.assertEqual(task_id, 12345)
-        self.mock_tts_service.post.say.assert_called_once_with("Message asynchrone")
+        self.mock_tts_service.post.say.assert_called_once_with(
+            "\\vol=150\\ Message asynchrone"
+        )
     
     def test_speak_async_empty_text(self):
         """Test de speak_async avec texte vide."""
@@ -278,7 +285,9 @@ class TestConvenienceFunction(unittest.TestCase):
         result = speak("Bonjour", session=mock_session)
         
         self.assertTrue(result)
-        mock_tts_service.say.assert_called_once_with("Bonjour")
+        mock_tts_service.say.assert_called_once_with(
+            "\\vol=150\\ Bonjour"
+        )
 
 
 class TestSupportedLanguages(unittest.TestCase):
