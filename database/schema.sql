@@ -43,12 +43,22 @@ CREATE TABLE IF NOT EXISTS alerts (
 
 INSERT OR IGNORE INTO patients (patient_id, first_name, last_name, age, room_number, discharge_date) VALUES
 ('PAT001', 'Ouassim', 'ARIOUI', 72, '203', '15/06/2026'),
-('PAT002', 'Asmaa', 'BOUKRAA', 68, '204', '20/06/2026');
+('PAT002', 'Asmaa', 'BOUKRAA', 68, '204', '20/06/2026'),
+('PAT003', 'Mohamed', 'DJELLOULI', 23, '205', '10/07/2026'),
+('PAT004', 'Youssef', 'JEMAA', 23, '206', '25/07/2026'),
+('PAT005', 'Walid', 'FARAH', 22, '207', '05/08/2026');
 
 INSERT OR IGNORE INTO medications (patient_id, medicine_name, next_time) VALUES
 ('PAT001', 'doliprane', '22:00'),
 ('PAT001', 'insuline', '23:30'),
-('PAT002', 'paracétamol', '21:00');
+('PAT002', 'paracétamol', '21:00'),
+('PAT003', 'amoxicilline', '08:00'),
+('PAT003', 'ibuprofène', '14:00'),
+('PAT004', 'tramadol', '09:00'),
+('PAT004', 'aspirine', '18:00'),
+('PAT004', 'codéine', '23:00'),
+('PAT005', 'morphine', '07:00'),
+('PAT005', 'doliprane', '20:00');
 INSERT OR IGNORE INTO alerts (patient_id, message) VALUES
 ('PAT001', 'Patient PAT001 has missed their medication doliprane.'),
 ('PAT002', 'Patient PAT002 has a critical alert: High blood pressure detected.');

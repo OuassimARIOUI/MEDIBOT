@@ -118,6 +118,46 @@ nlu:
     - bonjour je suis ouassim
     - bonjour je suis asma
     - bonjour je suis assma
+    - mohamed djellouli
+    - je suis mohamed djellouli
+    - je suis mohamed
+    - je suis mohammed djellouli
+    - je suis mouhamed djellouli
+    - je m'appelle mohamed
+    - je m'appelle mohamed djellouli
+    - mon nom est mohamed djellouli
+    - mon nom est mohammed
+    - c'est mohamed
+    - c'est mohammed
+    - moi c'est mohamed
+    - bonjour je suis mohamed
+    - bonjour je suis mohamed djellouli
+    - youssef jemaa
+    - je suis youssef jemaa
+    - je suis youssef
+    - je suis yousef jemaa
+    - je suis youcef jemaa
+    - je m'appelle youssef
+    - je m'appelle youssef jemaa
+    - mon nom est youssef jemaa
+    - mon nom est youssef
+    - c'est youssef
+    - moi c'est youssef
+    - bonjour je suis youssef
+    - bonjour je suis youssef jemaa
+    - walid farah
+    - je suis walid farah
+    - je suis walid
+    - je suis oualid farah
+    - je suis waalid farah
+    - je m'appelle walid
+    - je m'appelle walid farah
+    - mon nom est walid farah
+    - mon nom est walid
+    - c'est walid
+    - moi c'est walid
+    - bonjour je suis walid
+    - bonjour je suis walid farah
 
 - intent: goodbye
   examples: |
