@@ -18,6 +18,7 @@ except ImportError:
 # Import route blueprints
 from alert_routes import alerts_bp
 from patient_routes import patients_bp
+from extensions import socketio
 
 
 def create_app():
@@ -37,6 +38,12 @@ def create_app():
             "allow_headers": ["Content-Type", "Authorization"]
         }
     })
+
+    # Initialize SocketIO with the app (CORS origins for WebSocket)
+    socketio.init_app(app, cors_allowed_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ])
     
     # Configuration
     app.config['JSON_AS_ASCII'] = False  # Support French characters
@@ -120,11 +127,13 @@ if __name__ == '__main__':
     print(f"📊 Dashboard frontend should run on: http://localhost:3000")
     print("="*60 + "\n")
     
-    # Run Flask development server
+    # Run Flask + SocketIO server
     # debug=False : évite le rechargeur Werkzeug qui cause de faux "processus terminé"
     # quand lancé via subprocess (run.py).
-    app.run(
+    socketio.run(
+        app,
         host='0.0.0.0',
         port=5000,
-        debug=False
+        debug=False,
+        allow_unsafe_werkzeug=True
     )

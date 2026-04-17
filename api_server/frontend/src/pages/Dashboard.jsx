@@ -6,9 +6,10 @@
  * Implements auto-refresh polling for real-time updates.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import AlertCard from '../components/AlertCard';
 import PatientCard from '../components/PatientCard';
+import socket from '../socket';
 import { 
   getUnhandledAlerts, 
   getAllPatients, 
@@ -144,6 +145,32 @@ const Dashboard = () => {
     }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
+  }, []);
+
+  // ─── WebSocket real-time updates ───────────────────────────
+  useEffect(() => {
+    const onNewAlert = (alert) => {
+      console.log('🔔 Nouvelle alerte reçue via WebSocket:', alert);
+      setAlerts((prev) => [alert, ...prev]);
+      setLastUpdate(new Date());
+      // Refresh stats to stay in sync
+      fetchStats();
+    };
+
+    const onAlertAcknowledged = ({ alert_id }) => {
+      console.log('✓ Alerte acquittée via WebSocket:', alert_id);
+      setAlerts((prev) => prev.filter((a) => a.id !== alert_id));
+      setLastUpdate(new Date());
+      fetchStats();
+    };
+
+    socket.on('new_alert', onNewAlert);
+    socket.on('alert_acknowledged', onAlertAcknowledged);
+
+    return () => {
+      socket.off('new_alert', onNewAlert);
+      socket.off('alert_acknowledged', onAlertAcknowledged);
+    };
   }, []);
 
   // Format last update time

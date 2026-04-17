@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, request, current_app
 import sqlite3
 from datetime import datetime
 from utils.mail_service import send_alert_notification
+from extensions import socketio
 
 
 # Create Blueprint.
@@ -163,6 +164,17 @@ def create_alert():
 
         print(f"✓ Alerte #{alert_id} créée: [{severity.upper()}] {message[:80]}")
 
+        # Émettre l'alerte en temps réel via WebSocket
+        alert_payload = {
+            "id": alert_id,
+            "patient_id": patient_id,
+            "alert_type": alert_type,
+            "severity": severity,
+            "message": message,
+            "timestamp": datetime.now().isoformat(),
+        }
+        socketio.emit('new_alert', alert_payload)
+
         return jsonify({
             "success": True,
             "alert_id": alert_id,
@@ -295,7 +307,13 @@ def acknowledge_alert(alert_id):
             )
         except Exception as e:
             print(f"⚠️  Notification failed: {e}")
-        
+
+        # Notifier le dashboard en temps réel
+        socketio.emit('alert_acknowledged', {
+            "alert_id": alert_id,
+            "handled_by": handled_by,
+        })
+
         return jsonify({
             "success": True,
             "message": "Alert acknowledged successfully",

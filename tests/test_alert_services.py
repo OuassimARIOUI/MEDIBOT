@@ -60,7 +60,12 @@ class TestAlertService(unittest.TestCase):
                 alert_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 patient_id TEXT,
                 message TEXT,
+                alert_type TEXT DEFAULT 'general',
+                severity TEXT DEFAULT 'medium',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                handled INTEGER DEFAULT 0,
+                handled_at DATETIME,
+                handled_by TEXT,
                 FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
             )
         """)
@@ -328,7 +333,8 @@ class TestAlertService(unittest.TestCase):
         
         # Vérifications
         self.assertTrue(result['success'])
-        self.assertEqual(result['alert_id'], 1)
+        # Quand le dashboard répond OK, pas de sauvegarde locale → alert_id est None
+        self.assertIsNone(result['alert_id'])
         self.assertTrue(result['dashboard_sent'])
         self.assertEqual(result['patient_name'], 'Ouassim ARIOUI')
         self.assertEqual(result['room_number'], '203')
@@ -336,7 +342,7 @@ class TestAlertService(unittest.TestCase):
         
         # Vérifier que les fonctions ont été appelées
         mock_get_patient.assert_called_once_with('PAT001')
-        mock_save.assert_called_once()
+        mock_save.assert_not_called()  # Pas de fallback quand dashboard OK
         mock_send.assert_called_once()
     
     @patch('rasa_bot.actions.alert_service.get_patient_info')
@@ -487,17 +493,11 @@ class TestAlertService(unittest.TestCase):
         
         # Vérifications complètes
         self.assertTrue(result['success'])
-        self.assertIsNotNone(result['alert_id'])
+        # Dashboard a répondu 200 → pas de sauvegarde locale → alert_id None
+        self.assertIsNone(result['alert_id'])
         self.assertTrue(result['dashboard_sent'])
         self.assertEqual(result['patient_name'], 'Ouassim ARIOUI')
         self.assertEqual(result['room_number'], '203')
-        
-        # Vérifier que l'alerte est dans la DB avec un nouveau curseur
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM alerts WHERE patient_id = 'PAT001'")
-        count = cursor.fetchone()[0]
-        cursor.close()
-        self.assertGreater(count, 0)
 
 
 class TestAlertServiceEdgeCases(unittest.TestCase):
@@ -522,7 +522,13 @@ class TestAlertServiceEdgeCases(unittest.TestCase):
             CREATE TABLE alerts (
                 alert_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 patient_id TEXT,
-                message TEXT
+                message TEXT,
+                alert_type TEXT DEFAULT 'general',
+                severity TEXT DEFAULT 'medium',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                handled INTEGER DEFAULT 0,
+                handled_at DATETIME,
+                handled_by TEXT
             )
         """)
         
