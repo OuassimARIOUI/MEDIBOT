@@ -247,14 +247,20 @@ class MediBotLauncher:
         
         return process
 
-    def start_emotion_detection(self):
+    def start_emotion_detection(self, use_server_vision: bool = True):
         """Lance la détection d'émotions + urgences via la caméra (Pepper ou webcam).
+
+        OPTIMISÉ : Utilise run_emotion_optimized.py avec pipeline asynchrone.
+        
+        Args:
+            use_server_vision: Si True, déporte DeepFace sur le serveur Flask
+                              (recommandé pour Pepper car réduit la charge CPU)
 
         Utilise un venv séparé (EMOTION_VENV_PYTHON) pour éviter les conflits
         deepface/tensorflow vs Rasa.  Si la variable n'est pas définie,
         on tente avec le Python courant (mais deepface risque de manquer).
         """
-        log_service("Emotion", "Démarrage de la détection d'émotions...", Colors.YELLOW)
+        log_service("Emotion", "Démarrage de la détection d'émotions (OPTIMISÉ)...", Colors.YELLOW)
 
         # --- Déterminer quel interpréteur Python utiliser ---
         emotion_python = os.getenv("EMOTION_VENV_PYTHON", "").strip()
@@ -268,8 +274,24 @@ class MediBotLauncher:
             else:
                 log(f"  → Pas de venv séparé (EMOTION_VENV_PYTHON non défini)", Colors.DIM)
 
-        launcher_path = self.base_dir / "emotion_detection" / "_run_emotion.py"
-        cmd = [python_exe, str(launcher_path)]
+        # Utiliser la version optimisée si disponible
+        optimized_path = self.base_dir / "emotion_detection" / "run_emotion_optimized.py"
+        legacy_path = self.base_dir / "emotion_detection" / "_run_emotion.py"
+        
+        if optimized_path.exists():
+            launcher_path = optimized_path
+            # Ajouter l'option --server si demandé (recommandé pour Pepper)
+            cmd = [python_exe, str(launcher_path)]
+            if use_server_vision:
+                cmd.append("--server")
+                log(f"  → Mode SERVEUR : DeepFace déporté sur Flask API", Colors.CYAN)
+            else:
+                log(f"  → Mode LOCAL : DeepFace sur ce CPU (peut être lent)", Colors.YELLOW)
+        else:
+            launcher_path = legacy_path
+            cmd = [python_exe, str(launcher_path)]
+            log(f"  ⚠️  Version optimisée non trouvée, utilisation legacy", Colors.YELLOW)
+        
         cwd = self.base_dir / "emotion_detection"
         log_f = self._open_log("emotion_detection")
 
@@ -304,7 +326,7 @@ class MediBotLauncher:
             except Exception:
                 pass
         else:
-            log_service("Emotion", "✓ Détection émotions + urgences active", Colors.GREEN)
+            log_service("Emotion", "✓ Détection émotions + urgences active (async)", Colors.GREEN)
 
         return process
 

@@ -20,6 +20,13 @@ from alert_routes import alerts_bp
 from patient_routes import patients_bp
 from extensions import socketio
 
+# Import vision routes (optimisation latence - déportation DeepFace)
+try:
+    from vision_routes import vision_bp
+    VISION_AVAILABLE = True
+except ImportError:
+    VISION_AVAILABLE = False
+
 
 def create_app():
     """
@@ -63,6 +70,11 @@ def create_app():
     # Register blueprints
     app.register_blueprint(alerts_bp, url_prefix='/api/alerts')
     app.register_blueprint(patients_bp, url_prefix='/api/patients')
+    
+    # Vision routes (déportation DeepFace sur serveur pour optimiser Pepper)
+    if VISION_AVAILABLE:
+        app.register_blueprint(vision_bp)  # url_prefix déjà dans le blueprint
+        print("[Flask] Vision routes activées (/api/vision/*)")
     
     # Health check endpoint
     @app.route('/api/health', methods=['GET'])
