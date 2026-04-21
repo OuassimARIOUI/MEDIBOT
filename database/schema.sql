@@ -37,6 +37,29 @@ CREATE TABLE IF NOT EXISTS alerts (
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
 );
 
+-- ---------- EMOTION LOGS ----------
+CREATE TABLE IF NOT EXISTS emotion_logs (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id TEXT NOT NULL,
+    emotion TEXT NOT NULL,
+    severity TEXT DEFAULT 'low',
+    detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
+);
+
+-- ---------- SESSION PATIENT ACTIF ----------
+-- Table singleton (id=1) : patient identifié lors de la ronde en cours.
+-- Écrite par Rasa (ActionIdentifyPatient) et lue par le pipeline vision
+-- avant d'envoyer toute alerte, garantissant la traçabilité.
+CREATE TABLE IF NOT EXISTS current_patient_session (
+    id         INTEGER PRIMARY KEY DEFAULT 1,
+    patient_id TEXT    NOT NULL,
+    first_name TEXT,
+    last_name  TEXT,
+    identified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
+);
+
 -- ==========================
 -- DONNÉES INITIALES
 -- ==========================

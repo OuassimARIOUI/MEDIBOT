@@ -81,6 +81,20 @@ def migrate_alerts_table():
         
         conn.commit()
         
+        # ----- Nouvelle table : current_patient_session -----
+        print("\n--- Migration current_patient_session ---")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS current_patient_session (
+                id         INTEGER PRIMARY KEY DEFAULT 1,
+                patient_id TEXT    NOT NULL,
+                first_name TEXT,
+                last_name  TEXT,
+                identified_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        print("  ✓ Table 'current_patient_session' prête")
+        conn.commit()
+        
         # Verify the migration
         cursor.execute("PRAGMA table_info(alerts)")
         new_columns = [row[1] for row in cursor.fetchall()]

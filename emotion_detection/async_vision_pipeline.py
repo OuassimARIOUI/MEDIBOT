@@ -498,8 +498,116 @@ class AsyncVisionPipeline:
         # État
         self._started = False
         self._last_emotion = "neutral"
-        
+
+        # ── Identification patient (obligatoire avant alerte) ──────────────
+        # Alerte d'urgence différée si le patient est inconnu au moment de
+        # la détection. Elle est envoyée dès que l'identification est confirmée.
+        self._pending_emergency = None   # (reason: str, queued_at: float) | None
+        self._last_id_request_time = 0.0
+        self._id_request_cooldown  = 30.0  # secondes entre deux demandes
+
         logger.info("AsyncVisionPipeline initialisé")
+
+    # ── Helpers identification ─────────────────────────────────────────────
+
+    def _get_db_path(self) -> str:
+        """Retourne le chemin absolu vers medibot.db."""
+        from pathlib import Path
+        db_env = os.getenv("DB_PATH", "")
+        if db_env:
+            p = Path(db_env)
+            return str(p) if p.is_absolute() else str(Path(__file__).resolve().parent.parent / p)
+        return str(Path(__file__).resolve().parent.parent / "database" / "medibot.db")
+
+    def _get_db_patient_id(self) -> Optional[str]:
+        """
+        Lit le patient identifié dans current_patient_session (DB partagée avec Rasa).
+        Retourne None si inconnu ou session expirée (> 4 h).
+        """
+        try:
+            import sqlite3
+            from datetime import datetime, timedelta
+            conn = sqlite3.connect(self._get_db_path())
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT patient_id, identified_at FROM current_patient_session WHERE id = 1"
+            )
+            row = cursor.fetchone()
+            conn.close()
+            if not row:
+                return None
+            patient_id, identified_at = row
+            try:
+                if datetime.now() - datetime.fromisoformat(str(identified_at)) > timedelta(hours=4):
+                    return None
+            except Exception:
+                pass
+            return patient_id
+        except Exception as e:
+            logger.debug(f"Erreur lecture current_patient_session: {e}")
+            return None
+
+    def _resolve_patient_id(self) -> bool:
+        """
+        Tente de résoudre l'identité du patient :
+        1. self._patient_id déjà connu
+        2. DB remplie par Rasa via ActionIdentifyPatient
+        Retourne True si identifié, met à jour self._patient_id en cache.
+        """
+        if self._patient_id != "UNKNOWN":
+            return True
+        db_id = self._get_db_patient_id()
+        if db_id:
+            logger.info(f"Patient identifié depuis DB : {db_id}")
+            self._patient_id = db_id
+            self._emergency_worker._patient_id = db_id   # propager au worker
+            return True
+        return False
+
+    def _ask_for_identification(self) -> None:
+        """
+        Demande vocalement au patient de se présenter.
+        Respecte un cooldown de _id_request_cooldown secondes.
+        """
+        now = time.time()
+        if now - self._last_id_request_time < self._id_request_cooldown:
+            return
+        self._last_id_request_time = now
+        msg = "Je ne vous reconnais pas. Pouvez-vous me dire votre nom ?"
+        logger.warning(f"[IDENT] Demande identification : {msg}")
+        if self._tts:
+            try:
+                self._tts.say(msg)
+            except Exception as e:
+                logger.debug(f"TTS erreur ident: {e}")
+        else:
+            print(f"[MediBot] {msg}")
+
+    def _fire_pending_emergency(self) -> None:
+        """
+        Envoie l'alerte d'urgence différée si le patient est maintenant identifié.
+        Abandonne l'alerte si elle est en attente depuis plus de 3 minutes.
+        """
+        if not self._pending_emergency:
+            return
+        reason, queued_at = self._pending_emergency
+        if time.time() - queued_at > 180:   # 3 min max
+            logger.warning(f"[IDENT] Alerte urgence expirée (patient non identifié) : {reason}")
+            self._pending_emergency = None
+            return
+        if self._resolve_patient_id():
+            logger.warning(f"[IDENT] ✅ Patient identifié ({self._patient_id}) — envoi alerte différée : {reason}")
+            self._pending_emergency = None
+            self._alert_system.send_alert(
+                level=2,
+                reason=reason,
+                patient_id=self._patient_id,
+            )
+            if self._leds:
+                try:
+                    self._leds.fadeRGB("FaceLeds", 0xFF0000, 0.5)
+                except Exception:
+                    pass
     
     def start(self):
         """Démarre tous les workers."""
@@ -554,13 +662,17 @@ class AsyncVisionPipeline:
     def process_results(self) -> list:
         """
         Récupère ET traite les résultats (alertes, LEDs, etc.).
-        
+
         Cette méthode gère automatiquement les réactions aux émotions
         et l'envoi des alertes d'urgence.
-        
+
         Returns:
             Liste des résultats traités
         """
+        # Tenter d'envoyer une alerte d'urgence différée si le patient est
+        # maintenant identifié (identificationvocale traitée par Rasa)
+        self._fire_pending_emergency()
+
         results = self.get_results()
         
         for result in results:
@@ -573,23 +685,42 @@ class AsyncVisionPipeline:
         return results
     
     def _handle_emergency(self, result: AnalysisResult):
-        """Gère une alerte d'urgence."""
+        """Gère une alerte d'urgence.
+
+        Règle stricte : le patient DOIT être identifié avant l'envoi de l'alerte.
+        Si inconnu, le robot demande le nom et diffère l'alerte jusqu'à confirmation.
+        """
         logger.warning(f"URGENCE: {result.value}")
-        
-        # Alerte dashboard
+
+        # ── Identification obligatoire ──────────────────────────────────────
+        if not self._resolve_patient_id():
+            logger.warning(
+                f"[IDENT] Urgence détectée mais patient inconnu — alerte différée : {result.value}"
+            )
+            # Ne pas écraser une urgence plus ancienne déjà en attente
+            if not self._pending_emergency:
+                self._pending_emergency = (result.value, time.time())
+            self._ask_for_identification()
+            return  # Alerte envoyée ultérieurement par _fire_pending_emergency()
+
+        # Patient identifié → envoyer immédiatement
+        patient_id = result.metadata.get("patient_id", self._patient_id)
+        if patient_id == "UNKNOWN":
+            patient_id = self._patient_id
+
         self._alert_system.send_alert(
             level=2,
             reason=result.value,
-            patient_id=result.metadata.get("patient_id", self._patient_id)
+            patient_id=patient_id
         )
-        
+
         # LEDs rouges clignotantes
         if self._leds:
             try:
                 self._leds.fadeRGB("FaceLeds", 0xFF0000, 0.5)
             except Exception:
                 pass
-        
+
         # Message vocal d'alerte
         if self._tts:
             try:
@@ -616,10 +747,17 @@ class AsyncVisionPipeline:
             
             # Alerte si émotion critique
             if reaction.get("alert"):
+                # Identification obligatoire avant toute alerte
+                if not self._resolve_patient_id():
+                    self._ask_for_identification()
+                    return  # Pas d'alerte pour un patient inconnu
+                sev = reaction.get("severity", "medium")
                 self._alert_system.send_alert(
-                    level=reaction.get("severity", 1),
+                    level=2 if sev in ("high", "critical") else 1,
                     reason=f"Émotion détectée: {emotion}",
-                    patient_id=self._patient_id
+                    patient_id=self._patient_id,
+                    alert_type="emotion",
+                    severity=sev
                 )
         except ImportError:
             pass

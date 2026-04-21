@@ -140,3 +140,74 @@ def insert_alert(message: str, patient_id: str = "UNKNOWN") -> None:
 
     conn.commit()
     conn.close()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# SESSION PATIENT ACTIF
+# Partagée entre Rasa (écriture) et le pipeline vision (lecture).
+# Utilise une table singleton (id = 1) dans medibot.db.
+# ──────────────────────────────────────────────────────────────────────
+
+def set_current_patient(patient_id: str, first_name: str, last_name: str) -> None:
+    """
+    Enregistre (ou met à jour) le patient actuellement identifié.
+    Opération UPSERT sur la ligne id=1 de current_patient_session.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Créer la table si elle n'existe pas encore (tolérance migration)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS current_patient_session (
+            id         INTEGER PRIMARY KEY DEFAULT 1,
+            patient_id TEXT    NOT NULL,
+            first_name TEXT,
+            last_name  TEXT,
+            identified_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        INSERT INTO current_patient_session (id, patient_id, first_name, last_name, identified_at)
+        VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+            patient_id    = excluded.patient_id,
+            first_name    = excluded.first_name,
+            last_name     = excluded.last_name,
+            identified_at = excluded.identified_at
+    """, (patient_id, first_name, last_name))
+    conn.commit()
+    conn.close()
+
+
+def get_current_patient() -> Optional[dict]:
+    """
+    Retourne le patient identifié en cours de session, ou None.
+    La session est considérée valide pendant 4 heures.
+    """
+    from datetime import datetime, timedelta
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT patient_id, first_name, last_name, identified_at
+            FROM current_patient_session WHERE id = 1
+        """)
+        row = cursor.fetchone()
+    except Exception:
+        row = None
+    conn.close()
+
+    if not row:
+        return None
+    patient_id, first_name, last_name, identified_at = row
+    try:
+        ident_time = datetime.fromisoformat(str(identified_at))
+        if datetime.now() - ident_time > timedelta(hours=4):
+            return None  # Session expirée
+    except Exception:
+        pass  # Si le parsing échoue, utiliser quand même
+    return {
+        "patient_id": patient_id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "identified_at": identified_at,
+    }

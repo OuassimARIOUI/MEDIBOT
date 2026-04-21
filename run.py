@@ -217,6 +217,58 @@ class MediBotLauncher:
                 pass
         return process
     
+    def start_orchestrator(self, use_server_vision: bool = True):
+        """
+        Lance l'orchestrateur central MediBot (vision + audio avec priorités).
+
+        Remplace le lancement séparé de voice_bridge.py et run_emotion_optimized.py.
+        L'orchestrateur gère la machine d'états : EMERGENCY verrouille le dialogue,
+        ALERT notifie le soignant sans bloquer l'audio.
+        """
+        log_service("Orchestrateur", "Démarrage (vision + audio synchronisés)...", Colors.YELLOW)
+
+        python_exe = os.getenv("EMOTION_VENV_PYTHON", "").strip()
+        if not python_exe or not os.path.isfile(python_exe):
+            python_exe = sys.executable
+
+        cmd = [python_exe, str(self.base_dir / "medibot_orchestrator.py")]
+        if use_server_vision:
+            cmd.append("--server")
+
+        log_f = self._open_log("orchestrator")
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(self.base_dir)
+
+        kwargs = {
+            "cwd": self.base_dir,
+            "stdout": log_f,
+            "stderr": log_f,
+            "env": env,
+        }
+        if self.is_windows:
+            kwargs["shell"] = True
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True
+
+        process = subprocess.Popen(cmd, **kwargs)
+        self.processes.append(("Orchestrateur", process))
+        time.sleep(3)
+
+        if process.poll() is not None:
+            log_service("Orchestrateur", f"✗ Crash (code {process.returncode}) — voir logs/orchestrator.log", Colors.RED)
+            try:
+                log_f.flush()
+                with open(self.log_dir / "orchestrator.log", "r", encoding="utf-8", errors="replace") as rf:
+                    for line in rf.readlines()[-10:]:
+                        print(f"  {Colors.RED}{line.rstrip()}{Colors.RESET}")
+            except Exception:
+                pass
+        else:
+            log_service("Orchestrateur", "✓ Vision + Audio orchesterés (machine d'états active)", Colors.GREEN)
+
+        return process
+
     def start_voice_bridge(self):
         """Lance le pont vocal (voice_bridge.py) pour l'interaction voix ↔ Rasa."""
         log_service("Voice Bridge", "Démarrage du pont vocal Whisper → Rasa → TTS...", Colors.YELLOW)
@@ -755,13 +807,13 @@ class MediBotLauncher:
                                 ad = session.service("ALAudioDevice")
                                 current_vol = ad.getOutputVolume()
                                 log_service("Audio", f"Volume master actuel : {current_vol}%", Colors.CYAN)
-                                ad.setOutputVolume(100)
+                                ad.setOutputVolume(60)
                                 log_service("Audio", "Volume master forcé → 100%", Colors.GREEN)
                             except Exception as e:
                                 log_service("Audio", f"⚠️ ALAudioDevice : {e}", Colors.YELLOW)
 
                             try:
-                                tts_svc.setVolume(1.0)
+                                tts_svc.setVolume(0.6)
                                 tts_svc.setLanguage("French")
                                 tts_svc.setParameter("speed", 85)
                             except Exception:
@@ -787,12 +839,12 @@ class MediBotLauncher:
 ║  Le chatbot Rasa communiquera avec Pepper en temps réel.     ║
 ╚══════════════════════════════════════════════════════════════╝
 {Colors.RESET}""")
-                    # Lancer le pont vocal pour que le robot écoute et parle
+                    # Lancer le pont vocal (Python Rasa — contient sounddevice/scipy/pyttsx3)
                     log("\n🎤 Lancement du pont vocal (Whisper → Rasa → TTS)...\n", Colors.CYAN)
                     self.start_voice_bridge()
-                    
-                    # Lancer la détection d'émotions + urgences via caméra
-                    log("\n👁️ Lancement de la détection d'émotions...\n", Colors.CYAN)
+
+                    # Lancer la détection vision (venv_vision — contient deepface/mediapipe)
+                    log("\n👁️ Lancement de la détection d'émotions + urgences...\n", Colors.CYAN)
                     self.start_emotion_detection()
                 else:
                     log(f"""

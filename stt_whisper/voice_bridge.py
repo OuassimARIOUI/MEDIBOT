@@ -16,6 +16,7 @@ import time
 import numpy as np
 import requests
 from scipy.io.wavfile import write
+from typing import Optional
 
 # --- Charger les variables d'environnement (.env) ---
 try:
@@ -33,7 +34,14 @@ from whisper_listener import MediBotListener
 # --- CONFIGURATION ---
 RASA_URL = "http://localhost:5005/webhooks/rest/webhook"
 FS = 16000        # Fréquence d'échantillonnage Whisper
-DURATION = 3      # 5s — bon compromis (8s trop long, 3s trop court)
+# --- VAD (Voice Activity Detection) ---
+MAX_DURATION     = 10.0   # Durée maximale d'écoute par tour (secondes)
+DURATION_FALLBACK = 3.0   # Durée fixe si InputStream indisponible
+SILENCE_TIMEOUT  = 0.9   # Secondes de silence consécutives pour stopper
+VAD_ONSET_FRAMES = 3      # Frames consécutives au-dessus du seuil pour démarrer
+MIN_SPEECH_DURATION = 0.4 # Durée minimale de parole valide (secondes)
+VAD_CHUNK_S      = 0.1   # Durée d'un chunk PC (100ms = 1600 samples à 16 kHz)
+PEPPER_CHUNK_S   = 1.5   # Durée d'un chunk Pepper (délai SFTP inclus)
 TEMP_FILE = "temp_voice.wav"
 MIN_ENERGY_THRESHOLD = 0.003  # Seuil bas pour ne rien rater (0.01 filtrait trop)
 
@@ -70,8 +78,8 @@ def _get_pepper_session():
         return None
 
 print("Chargement du modèle Whisper...")
-print("[INFO] Utilisation du modèle 'small' pour meilleure précision...")
-listener = MediBotListener(model_size="small")
+print("[INFO] Utilisation du modèle 'medium' pour meilleure précision médicale...")
+listener = MediBotListener(model_size="medium")
 
 # ===================================================================
 # TTS — PAROLE DU ROBOT
@@ -282,82 +290,122 @@ def record_audio() -> np.ndarray:
         return _record_pc()
 
 
+def _fetch_pepper_audio(remote_path: str, local_path: str) -> Optional[np.ndarray]:
+    """
+    Transfère un chunk WAV depuis Pepper (SFTP puis SCP en fallback)
+    et retourne un numpy array float32. Retourne None en cas d'échec.
+    """
+    transferred = False
+    try:
+        import paramiko
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(PEPPER_IP, username="nao", password="nao", timeout=5)
+        sftp = ssh.open_sftp()
+        sftp.get(remote_path, local_path)
+        sftp.close()
+        ssh.close()
+        transferred = True
+    except ImportError:
+        pass  # Essayer SCP ci-dessous
+    except Exception as e:
+        print(f"[PEPPER FETCH] SFTP échoué ({e}), tentative SCP...")
+
+    if not transferred:
+        try:
+            import subprocess
+            r = subprocess.run(
+                ["scp", "-o", "StrictHostKeyChecking=no",
+                 f"nao@{PEPPER_IP}:{remote_path}", local_path],
+                capture_output=True, timeout=10
+            )
+            if r.returncode == 0:
+                transferred = True
+            else:
+                print(f"[PEPPER FETCH] SCP échoué: {r.stderr.decode(errors='ignore')}")
+        except Exception as e:
+            print(f"[PEPPER FETCH] SCP erreur: {e}")
+
+    if not transferred or not os.path.exists(local_path) or os.path.getsize(local_path) < 100:
+        return None
+
+    try:
+        from scipy.io.wavfile import read as wavread
+        _, data = wavread(local_path)
+        if data.ndim > 1:
+            data = data[:, 0]
+        return data.astype(np.float32) / 32768.0
+    except Exception as e:
+        print(f"[PEPPER FETCH] Lecture WAV échouée: {e}")
+        return None
+
+
 def _record_pepper() -> np.ndarray:
     """
-    Capture audio depuis les microphones de Pepper (ALAudioRecorder).
-    1. Enregistre sur /home/nao/temp_medibot.wav via NAOqi
-    2. Récupère le fichier via SFTP (paramiko) ou SCP
-    3. Lit le WAV localement et retourne un numpy array
+    Capture audio Pepper avec VAD par chunks successifs.
+    Enregistre des tranches de PEPPER_CHUNK_S secondes jusqu'à détection
+    de silence post-parole ou dépassement de MAX_DURATION.
     """
     session = _get_pepper_session()
     if session is None:
         print("[PEPPER MIC] Pas de session NAOqi, fallback micro PC.")
         return _record_pc()
+
     try:
         recorder = session.service("ALAudioRecorder")
         remote_path = "/home/nao/temp_medibot.wav"
         local_path = os.path.join(os.path.dirname(__file__), "pepper_audio.wav")
+        channels = [0, 0, 1, 0]   # Microphone frontal uniquement
 
-        # Supprimer l'ancien enregistrement distant s'il existe
         try:
             recorder.stopMicrophonesRecording()
         except Exception:
             pass
 
-        # Enregistrement — micro frontal + gauche
-        # NAOqi attend une LISTE (AL::ALValue), PAS un tuple
-        # [Left, Right, Front, Rear] — 1=actif, 0=inactif
-        channels = [0, 0, 1, 0]   # Front uniquement (le plus proche du patient)
-        print(f"[PEPPER MIC] 🎤 Écoute en cours ({DURATION}s)...")
-        recorder.startMicrophonesRecording(remote_path, "wav", FS, channels)
-        time.sleep(DURATION)
-        recorder.stopMicrophonesRecording()
-        print("[PEPPER MIC] ✅ Enregistrement terminé.")
+        max_chunks  = int(MAX_DURATION / PEPPER_CHUNK_S)
+        chunks_audio: list = []
+        speech_started = False
+        silent_chunks = 0
+        SILENT_LIMIT = 1  # 1 chunk (≈PEPPER_CHUNK_S s) de silence → fin
 
-        # --- Récupérer le fichier via SFTP ---
-        try:
-            import paramiko
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(PEPPER_IP, username="nao", password="nao", timeout=5)
-            sftp = ssh.open_sftp()
-            sftp.get(remote_path, local_path)
-            sftp.close()
-            ssh.close()
-            print(f"[PEPPER MIC] 📥 Fichier récupéré via SFTP → {local_path}")
-        except ImportError:
-            # paramiko pas installé → essayer scp via subprocess
-            print("[PEPPER MIC] paramiko non installé, tentative scp...")
-            import subprocess
-            result = subprocess.run(
-                ["scp", f"nao@{PEPPER_IP}:{remote_path}", local_path],
-                capture_output=True, timeout=10
-            )
-            if result.returncode != 0:
-                print(f"[PEPPER MIC] ⚠️ SCP échoué : {result.stderr.decode()}")
-                print("[PEPPER MIC] Fallback micro PC.")
-                return _record_pc()
-        except Exception as e:
-            print(f"[PEPPER MIC] ⚠️ Transfert échoué ({e}), fallback micro PC.")
-            return _record_pc()
+        print(f"[VAD PEPPER] 🎤 En attente de voix... (max {MAX_DURATION:.0f}s)")
 
-        # --- Lire le WAV récupéré ---
-        if os.path.exists(local_path) and os.path.getsize(local_path) > 100:
-            from scipy.io.wavfile import read as wavread
-            rate, data = wavread(local_path)
-            if data.ndim > 1:
-                data = data[:, 0]  # Mono uniquement
-            audio = data.astype(np.float32) / 32768.0
-            energy = np.sqrt(np.mean(audio ** 2))
-            print(f"[PEPPER MIC] 📊 Énergie audio : {energy:.4f} (seuil: {MIN_ENERGY_THRESHOLD})")
-            return audio
-        else:
-            print("[PEPPER MIC] ⚠️ Fichier audio vide ou introuvable, fallback micro PC.")
-            return _record_pc()
+        for _ in range(max_chunks):
+            recorder.startMicrophonesRecording(remote_path, "wav", FS, channels)
+            time.sleep(PEPPER_CHUNK_S)
+            recorder.stopMicrophonesRecording()
+
+            chunk_audio = _fetch_pepper_audio(remote_path, local_path)
+            if chunk_audio is None:
+                print("[VAD PEPPER] ⚠️ Chunk indisponible, arrêt.")
+                break
+
+            rms = float(np.sqrt(np.mean(chunk_audio ** 2)))
+            is_voice = rms > MIN_ENERGY_THRESHOLD
+
+            if not speech_started:
+                if is_voice:
+                    speech_started = True
+                    chunks_audio.append(chunk_audio)
+                    print("[VAD PEPPER] ✅ Voix détectée — enregistrement en cours...")
+            else:
+                chunks_audio.append(chunk_audio)
+                if not is_voice:
+                    silent_chunks += 1
+                    if silent_chunks >= SILENT_LIMIT:
+                        print("[VAD PEPPER] 🔇 Silence détecté — traitement en cours...")
+                        break
+                else:
+                    silent_chunks = 0
+
+        if not chunks_audio:
+            print("[VAD PEPPER] Aucune voix détectée.")
+            return np.zeros(int(FS * PEPPER_CHUNK_S), dtype=np.float32)
+
+        return np.concatenate(chunks_audio)
 
     except Exception as e:
         print(f"[PEPPER MIC] Erreur ({e}), fallback micro PC.")
-        # Ne reset la session que si c'est une erreur de connexion
         if "connection" in str(e).lower() or "disconnected" in str(e).lower():
             global _pepper_session
             _pepper_session = None
@@ -365,15 +413,75 @@ def _record_pepper() -> np.ndarray:
 
 
 def _record_pc() -> np.ndarray:
-    """Capture audio depuis le microphone du PC (mode simulation)."""
+    """
+    Capture audio avec VAD — s'arrête dès que le patient a fini de parler.
+    Utilise sounddevice.InputStream pour lire par chunks de VAD_CHUNK_S secondes.
+    """
     try:
         import sounddevice as sd
-        recording = sd.rec(int(DURATION * FS), samplerate=FS, channels=1, dtype='float32')
+        chunk_size   = int(FS * VAD_CHUNK_S)
+        max_frames   = int(MAX_DURATION / VAD_CHUNK_S)
+        silence_limit = int(SILENCE_TIMEOUT / VAD_CHUNK_S)
+        chunks: list = []
+        speech_started = False
+        onset_count    = 0
+        silence_count  = 0
+
+        print(f"[VAD] 🎤 En attente de voix... (max {MAX_DURATION:.0f}s)")
+
+        with sd.InputStream(samplerate=FS, channels=1, dtype='float32',
+                            blocksize=chunk_size) as stream:
+            for _ in range(max_frames):
+                raw, _ = stream.read(chunk_size)
+                chunk = raw.flatten()
+                rms = float(np.sqrt(np.mean(chunk ** 2)))
+                is_voice = rms > MIN_ENERGY_THRESHOLD
+
+                if not speech_started:
+                    if is_voice:
+                        onset_count += 1
+                        chunks.append(chunk)
+                        if onset_count >= VAD_ONSET_FRAMES:
+                            speech_started = True
+                            print("[VAD] ✅ Voix détectée — enregistrement en cours...")
+                    else:
+                        onset_count = 0
+                        chunks.clear()  # Purger le pré-buffer (bruit)
+                else:
+                    chunks.append(chunk)
+                    if not is_voice:
+                        silence_count += 1
+                        if silence_count >= silence_limit:
+                            print("[VAD] 🔇 Silence détecté — traitement en cours...")
+                            break
+                    else:
+                        silence_count = 0
+
+        if not speech_started or not chunks:
+            return np.zeros(chunk_size, dtype=np.float32)
+
+        audio = np.concatenate(chunks)
+        if len(audio) / FS < MIN_SPEECH_DURATION:
+            return np.zeros(chunk_size, dtype=np.float32)
+
+        return audio
+
+    except Exception as e:
+        print(f"[PC MIC VAD] Erreur ({e}), fallback enregistrement fixe {DURATION_FALLBACK:.0f}s...")
+        return _record_pc_fixed()
+
+
+def _record_pc_fixed() -> np.ndarray:
+    """Fallback: enregistrement fixe si sounddevice.InputStream est indisponible."""
+    try:
+        import sounddevice as sd
+        recording = sd.rec(int(DURATION_FALLBACK * FS), samplerate=FS,
+                           channels=1, dtype='float32')
         sd.wait()
-        return recording
+        return recording.flatten()
     except Exception as e:
         print(f"[PC MIC] Erreur sounddevice : {e}")
-        return np.zeros((int(DURATION * FS), 1), dtype='float32')
+        return np.zeros(int(DURATION_FALLBACK * FS), dtype=np.float32)
 
 
 # ===================================================================
@@ -427,8 +535,14 @@ def send_to_rasa(message: str, max_retries: int = 3) -> None:
 # BOUCLE PRINCIPALE
 # ===================================================================
 
-def run_voice_loop() -> None:
-    """Boucle principale : Écoute → Transcription → Rasa → Voix."""
+def run_voice_loop(is_emergency_fn=None) -> None:
+    """
+    Boucle principale : Écoute → Transcription → Rasa → Voix.
+
+    Args:
+        is_emergency_fn: callable() -> bool optionnel, fourni par l'orchestrateur.
+                         Si retourne True, le cycle Rasa est suspendu (urgence vitale).
+    """
     mode = "PEPPER" if USE_PEPPER else "SIMULATION PC"
     print(f"\n=== MediBot est prêt ! Mode : {mode} (CTRL+C pour arrêter) ===")
     if USE_PEPPER:
@@ -456,25 +570,31 @@ def run_voice_loop() -> None:
         print("[WARN] ⚠️ Rasa n'a pas répondu après 2 min. On continue quand même.\n")
 
     while True:
-        icon = "🤖" if USE_PEPPER else "🎤"
-        print(f"\n{icon} --- ÉCOUTE en cours ({DURATION}s)... ---")
+        # --- Priorité absolue : suspendre si urgence vitale détectée ---
+        if is_emergency_fn is not None and is_emergency_fn():
+            print("\n[AUDIO] ⏸  Dialogue suspendu — urgence vitale en cours...")
+            time.sleep(2)
+            continue
 
+        # VAD — record_audio() se débloque dès que le patient a fini de parler
         recording = record_audio()
 
         if not has_speech(recording):
-            print("   ... Aucune voix détectée (trop silencieux) ...")
-            continue
+            continue  # Silence ou parole trop courte — VAD a déjà loggué
 
         write(TEMP_FILE, FS, recording)
 
-        print("   ⏳ Transcription en cours...")
+        print("   ⏳ Transcription en cours (Whisper medium)...")
         text = listener.transcribe(TEMP_FILE)
 
         if text and len(text) > 2:
             print(f"✅ Vous avez dit : {text}")
+            if is_emergency_fn is not None and is_emergency_fn():
+                print("[AUDIO] ⏸ Transcription ignorée (urgence prioritaire)")
+                continue
             send_to_rasa(text)
         else:
-            print("   ❌ Aucun texte reconnu (bruit parasite)")
+            print("   ❌ Aucun texte reconnu (bruit ou souffle)")
 
 
 if __name__ == "__main__":
