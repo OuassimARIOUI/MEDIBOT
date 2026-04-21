@@ -247,74 +247,36 @@ class MediBotLauncher:
         
         return process
 
-    def start_emotion_detection(self, use_server_vision: bool = True):
-        """Lance la détection d'émotions + urgences via la caméra (Pepper ou webcam).
-
-        OPTIMISÉ : Utilise run_emotion_optimized.py avec pipeline asynchrone.
+    def start_emotion_detection(self):
+        """Lance la détection d'émotions + urgences via la caméra (Pepper ou webcam)."""
+        log_service("Emotion", "Démarrage de la détection d'émotions...", Colors.YELLOW)
         
-        Args:
-            use_server_vision: Si True, déporte DeepFace sur le serveur Flask
-                              (recommandé pour Pepper car réduit la charge CPU)
-
-        Utilise un venv séparé (EMOTION_VENV_PYTHON) pour éviter les conflits
-        deepface/tensorflow vs Rasa.  Si la variable n'est pas définie,
-        on tente avec le Python courant (mais deepface risque de manquer).
-        """
-        log_service("Emotion", "Démarrage de la détection d'émotions (OPTIMISÉ)...", Colors.YELLOW)
-
-        # --- Déterminer quel interpréteur Python utiliser ---
-        emotion_python = os.getenv("EMOTION_VENV_PYTHON", "").strip()
-        if emotion_python and os.path.isfile(emotion_python):
-            python_exe = emotion_python
-            log(f"  → Venv émotions : {python_exe}", Colors.DIM)
-        else:
-            python_exe = sys.executable
-            if emotion_python:
-                log(f"  ⚠️  EMOTION_VENV_PYTHON={emotion_python} introuvable, utilisation du Python courant.", Colors.YELLOW)
-            else:
-                log(f"  → Pas de venv séparé (EMOTION_VENV_PYTHON non défini)", Colors.DIM)
-
-        # Utiliser la version optimisée si disponible
-        optimized_path = self.base_dir / "emotion_detection" / "run_emotion_optimized.py"
-        legacy_path = self.base_dir / "emotion_detection" / "_run_emotion.py"
+        # Créer un petit script lanceur qui initialise EmotionPipeline + EmergencyDetector
+        launcher_code = '''\nimport os, sys, time\nsys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))\n\n# Charger .env\ntry:\n    from dotenv import load_dotenv\n    from pathlib import Path\n    load_dotenv(Path(__file__).resolve().parent.parent / ".env")\nexcept ImportError:\n    pass\n\nPEPPER_IP = os.getenv("PEPPER_IP")\nPEPPER_PORT = int(os.getenv("PEPPER_PORT", "9559"))\n\npep_session = None\nif PEPPER_IP:\n    try:\n        import qi\n        pep_session = qi.Session()\n        pep_session.connect(f"tcp://{PEPPER_IP}:{PEPPER_PORT}")\n        print(f"[EMOTION] Session Pepper → {PEPPER_IP}")\n    except Exception as e:\n        print(f"[EMOTION] Pepper non connecté ({e}), mode webcam PC")\n\nfrom emotion_detector import EmotionPipeline\nfrom emergency_detector import EmergencyDetector\nfrom video_stream import VideoStream\n\npipeline = EmotionPipeline(\n    patient_id=os.getenv("PATIENT_ID", "PAT001"),\n    pepper_session=pep_session\n)\nemergency = EmergencyDetector()\n\nvideo_src = "pepper" if pep_session else 0\nstream = VideoStream(source=video_src, pepper_session=pep_session)\nprint(f"[EMOTION] Démarrage (source={video_src})...")\n\ntry:\n    while True:\n        frame = stream.get_frame()\n        if frame is None:\n            time.sleep(0.2)\n            continue\n        # 1) Détection émotions\n        emotion = pipeline.process_frame(frame)\n        # 2) Détection urgences (étouffement, respiration)\n        is_emergency, reason = emergency.analyze_frame(frame)\n        if is_emergency:\n            print(f"[URGENCE] {reason}")\n            from alert_system import AlertSystem\n            AlertSystem().send_alert(level=2, reason=reason)\n        time.sleep(0.2)\nexcept KeyboardInterrupt:\n    pass\nfinally:\n    stream.release()\n    print("[EMOTION] Arr\u00eat.")\n'''
         
-        if optimized_path.exists():
-            launcher_path = optimized_path
-            # Ajouter l'option --server si demandé (recommandé pour Pepper)
-            cmd = [python_exe, str(launcher_path)]
-            if use_server_vision:
-                cmd.append("--server")
-                log(f"  → Mode SERVEUR : DeepFace déporté sur Flask API", Colors.CYAN)
-            else:
-                log(f"  → Mode LOCAL : DeepFace sur ce CPU (peut être lent)", Colors.YELLOW)
-        else:
-            launcher_path = legacy_path
-            cmd = [python_exe, str(launcher_path)]
-            log(f"  ⚠️  Version optimisée non trouvée, utilisation legacy", Colors.YELLOW)
+        launcher_path = self.base_dir / "emotion_detection" / "_run_emotion.py"
+        with open(launcher_path, 'w', encoding='utf-8') as f:
+            f.write(launcher_code)
         
+        cmd = [sys.executable, "_run_emotion.py"]
         cwd = self.base_dir / "emotion_detection"
         log_f = self._open_log("emotion_detection")
-
-        # Passer les variables d'environnement pertinentes au subprocess
-        env = os.environ.copy()
-        env["PYTHONPATH"] = str(self.base_dir)  # pour les imports cross-modules
-
+        
         kwargs = {
             'cwd': cwd,
             'stdout': log_f,
             'stderr': log_f,
-            'env': env,
         }
         if self.is_windows:
             kwargs['shell'] = True
             kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs['start_new_session'] = True
-
+        
         process = subprocess.Popen(cmd, **kwargs)
         self.processes.append(("Emotion Detection", process))
         time.sleep(3)
-
+        
         if process.poll() is not None:
             log_service("Emotion", f"✗ Crash (code {process.returncode}) — voir logs/emotion_detection.log", Colors.RED)
             try:
@@ -326,8 +288,8 @@ class MediBotLauncher:
             except Exception:
                 pass
         else:
-            log_service("Emotion", "✓ Détection émotions + urgences active (async)", Colors.GREEN)
-
+            log_service("Emotion", "✓ Détection émotions + urgences active", Colors.GREEN)
+        
         return process
 
     def start_frontend(self):
@@ -640,10 +602,8 @@ class MediBotLauncher:
             except Exception as e:
                 log_service("Pepper", f"⚠️ Erreur déconnexion: {e}", Colors.RED)
         
-        # --- Phase 1 : SIGTERM gracieux sur tous les groupes de processus ---
-        still_alive = []
         for name, process in self.processes:
-            if process.poll() is None:
+            if process.poll() is None:  # Si le processus tourne encore
                 log_service(name, "Arrêt...", Colors.YELLOW)
                 try:
                     if self.is_windows:
@@ -653,36 +613,11 @@ class MediBotLauncher:
                         )
                     else:
                         os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                    still_alive.append((name, process))
-                except Exception:
-                    still_alive.append((name, process))
-        
-        # Attendre que les processus se terminent gracieusement (max 4s)
-        deadline = time.time() + 4
-        for name, process in still_alive:
-            remaining = max(0, deadline - time.time())
-            try:
-                process.wait(timeout=remaining)
-                log_service(name, "✓ Arrêté", Colors.GREEN)
-            except subprocess.TimeoutExpired:
-                pass
-        
-        # --- Phase 2 : SIGKILL forcé pour tout ce qui survit ---
-        for name, process in still_alive:
-            if process.poll() is None:
-                log_service(name, "Force kill...", Colors.RED)
-                try:
-                    if self.is_windows:
-                        subprocess.run(
-                            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
-                            capture_output=True
-                        )
-                    else:
-                        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                    process.wait(timeout=3)
-                    log_service(name, "✓ Forcé", Colors.YELLOW)
+                    process.wait(timeout=5)
+                    log_service(name, "✓ Arrêté", Colors.GREEN)
                 except Exception as e:
-                    log_service(name, f"⚠️ Impossible de tuer: {e}", Colors.RED)
+                    log_service(name, f"⚠️ Erreur: {e}", Colors.RED)
+                    process.kill()
     
     def run(self, connect_pepper=False):
         """Lance tous les services."""
@@ -704,13 +639,6 @@ class MediBotLauncher:
                 return
         
         log("\n🚀 Lancement des services...\n", Colors.GREEN)
-        
-        # Installer un handler de signal pour s'assurer que Ctrl+C tue tout
-        def _signal_handler(sig, frame):
-            raise KeyboardInterrupt
-        signal.signal(signal.SIGINT, _signal_handler)
-        if not self.is_windows:
-            signal.signal(signal.SIGTERM, _signal_handler)
         
         try:
             # Lancer les services dans l'ordre
@@ -769,7 +697,7 @@ class MediBotLauncher:
 
                             # Parler — appel bloquant, attend la fin de la phrase
                             log_service("TTS", "Robot parle maintenant...", Colors.CYAN)
-                            tts_svc.say("\\vol=100\\ Bonjour ! Je suis Médi Bot. Connexion réussie.")
+                            tts_svc.say("Bonjour ! Je suis Médi Bot. Connexion réussie.")
                             log_service("Test TTS", "✓ Le robot a parlé !", Colors.GREEN)
                         
                         if self.pepper_controller and self.pepper_controller.leds:
@@ -878,8 +806,6 @@ def main():
             while True:
                 time.sleep(5)
         except KeyboardInterrupt:
-            pass
-        finally:
             launcher.stop_all()
     else:
         # Modifier la méthode run pour respecter les flags

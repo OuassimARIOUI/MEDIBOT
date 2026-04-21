@@ -1,40 +1,22 @@
 """
-emotion_detector.py — Détection d'émotions et pipeline intégrée.
+emotion_detector.py -- Detection d'emotions et pipeline integree.
 
-BUG CORRIGE 8 :
-  La version précédente analysait les émotions mais ne faisait RIEN
-  avec les résultats : ni alerte, ni LEDs Pepper, ni message vocal.
-  Désormais :
-    - Les émotions de détresse (angry/fear/sad) déclenchent AlertSystem
-    - Les LEDs Pepper sont contrôlées via les hex NAOqi de emotion_rules.py
-    - Le robot parle via ALTextToSpeech si Pepper est connecté
-    - VideoStream est utilisé pour la capture caméra
+Fonctionnalites :
+  - Les emotions de detresse (angry/fear/sad) declenchent AlertSystem
+  - Les LEDs Pepper sont controlees via les hex NAOqi de emotion_rules.py
+  - Le robot parle via ALTextToSpeech si Pepper est connecte
+  - VideoStream est utilise pour la capture camera
+  - Chaque emotion stable est enregistree dans la BD (table emotion_logs)
+  - Les emotions de detresse declenchent une alerte avec notification infirmiers
+  - La BD est mise a jour en consequence pour le dashboard
 """
 
 import os
 import time
 import logging
+from deepface import DeepFace
 
 logger = logging.getLogger(__name__)
-
-# Import paresseux de DeepFace : évite de casser les autres modules
-# (Rasa, Whisper, etc.) si deepface n'est pas installé dans cet env.
-_deepface = None
-
-def _get_deepface():
-    global _deepface
-    if _deepface is None:
-        try:
-            from deepface import DeepFace as _df
-            _deepface = _df
-        except ImportError:
-            raise ImportError(
-                "deepface n'est pas installé. "
-                "Installez-le séparément : pip install deepface==0.0.79\n"
-                "Ou lancez la détection d'émotions dans un venv dédié "
-                "(voir README emotion_detection)."
-            )
-    return _deepface
 
 # Interval minimum entre deux réactions pour la même émotion (secondes)
 REACTION_COOLDOWN = 30
@@ -51,11 +33,8 @@ class EmotionDetector:
     def analyze_emotion(self, frame):
         """Retourne l'émotion dominante ('happy', 'sad', ...) ou 'unknown'."""
         try:
-            df = _get_deepface()
-            results = df.analyze(frame, actions=['emotion'], enforce_detection=False)
+            results = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
             return results[0]['dominant_emotion']
-        except ImportError:
-            raise  # Remonter l'erreur d'import
         except Exception as e:
             logger.debug(f"EmotionDetector: erreur analyse ({e})")
             return "unknown"
@@ -85,13 +64,7 @@ class EmotionPipeline:
         if pepper_session is not None:
             try:
                 self._tts = pepper_session.service("ALTextToSpeech")
-                self._tts.setVolume(1.0)
                 self._tts.setLanguage("French")
-                try:
-                    audio_dev = pepper_session.service("ALAudioDevice")
-                    audio_dev.setOutputVolume(100)
-                except Exception:
-                    pass
                 self._leds = pepper_session.service("ALLeds")
                 logger.info("EmotionPipeline: services Pepper TTS + LEDs OK")
             except Exception as e:
@@ -166,11 +139,11 @@ class EmotionPipeline:
     # ------------------------------------------------------------------
 
     def _react(self, emotion: str) -> None:
-        """Déclenche les réactions (LEDs, TTS, alerte) pour une émotion stable."""
+        """Declenche les reactions (LEDs, TTS, alerte, BD) pour une emotion stable."""
         from emotion_rules import get_medibot_reaction
         reaction = get_medibot_reaction(emotion)
 
-        # Cooldown : ne pas répéter la même réaction trop vite
+        # Cooldown : ne pas repeter la meme reaction trop vite
         now = time.time()
         if now - self._last_reaction_time.get(emotion, 0) < REACTION_COOLDOWN:
             return
@@ -182,9 +155,12 @@ class EmotionPipeline:
         # 2. Message vocal
         if reaction["msg"]:
             self._say(reaction["msg"])
-            print(f"  [Réaction] {reaction['gesture']} | {reaction['leds']}")
+            print(f"  [Reaction] {reaction['gesture']} | {reaction['leds']}")
 
-        # 3. Alerte soignant si nécessaire
+        # 3. Enregistrer l'emotion dans la BD (emotion_logs) -- TOUJOURS
+        self._log_emotion_to_db(emotion, reaction.get("severity", "low"))
+
+        # 4. Alerte soignant si necessaire (sad/angry/fear)
         if reaction.get("alert"):
             self._send_alert(emotion, reaction["severity"])
 
@@ -203,19 +179,33 @@ class EmotionPipeline:
         """Fait parler Pepper (ALTextToSpeech) ou logge en mode PC."""
         if self._tts is not None:
             try:
-                self._tts.say(f"\\vol=150\\ {text}")
+                self._tts.say(text)
             except Exception as e:
                 logger.warning(f"TTS error: {e}")
         else:
             print(f"  [SIM TTS] {text}")
 
+    def _log_emotion_to_db(self, emotion: str, severity: str) -> None:
+        """Enregistre l'emotion detectee dans la table emotion_logs de la BD."""
+        sev = severity or "low"
+        try:
+            self._alert_system.log_emotion(
+                patient_id=self.patient_id,
+                emotion=emotion,
+                severity=sev
+            )
+            logger.info(f"Emotion '{emotion}' enregistree en BD pour {self.patient_id}")
+        except Exception as e:
+            logger.error(f"Erreur log emotion BD: {e}")
+
     def _send_alert(self, emotion: str, severity: str) -> None:
-        """Envoie une alerte au dashboard Flask via AlertSystem."""
-        level = 2 if severity == "high" else 1
-        reason = f"Émotion de détresse détectée : {emotion} (patient {self.patient_id})"
-        logger.warning(f"ALERTE niveau {level} : {reason}")
-        self._alert_system.send_alert(
-            level=level,
-            reason=reason,
-            patient_id=self.patient_id
+        """
+        Envoie une alerte au dashboard Flask via AlertSystem.
+        Insere dans la BD + notifie les infirmiers.
+        """
+        logger.warning(f"ALERTE emotion [{severity}] : {emotion} pour {self.patient_id}")
+        self._alert_system.send_emotion_alert(
+            emotion=emotion,
+            patient_id=self.patient_id,
+            severity=severity
         )
