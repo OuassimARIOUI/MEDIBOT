@@ -724,7 +724,7 @@ class AsyncVisionPipeline:
         # Message vocal d'alerte
         if self._tts:
             try:
-                self._tts.say("Alerte urgence détectée")
+                self._tts.say("")
             except Exception:
                 pass
     
