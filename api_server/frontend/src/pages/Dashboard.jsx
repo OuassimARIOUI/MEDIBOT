@@ -15,8 +15,15 @@ import {
   getAllPatients, 
   acknowledgeAlert,
   getAlertStats,
-  getPatientStats
+  getPatientStats,
+  deleteAllAlerts
 } from '../api';
+
+// Patient inconnu — filtrer les alertes sans identité réelle
+const isUnknownPatient = (alert) => {
+  const name = (alert.patient_name || alert.patient_id || '').trim().toLowerCase();
+  return !name || name === 'unknown' || name === 'inconnu' || name === '';
+};
 
 const Dashboard = () => {
   // State management
@@ -34,7 +41,9 @@ const Dashboard = () => {
     try {
       const response = await getUnhandledAlerts();
       if (response.data.success) {
-        setAlerts(response.data.alerts);
+        // Filtrer les alertes des patients non identifiés
+        const filtered = response.data.alerts.filter(a => !isUnknownPatient(a));
+        setAlerts(filtered);
       }
     } catch (err) {
       console.error('Error fetching alerts:', err);
@@ -151,6 +160,11 @@ const Dashboard = () => {
   useEffect(() => {
     const onNewAlert = (alert) => {
       console.log('🔔 Nouvelle alerte reçue via WebSocket:', alert);
+      // Ignorer les alertes de patients inconnus
+      if (isUnknownPatient(alert)) {
+        console.log('🚫 Alerte ignorée (patient inconnu)');
+        return;
+      }
       setAlerts((prev) => [alert, ...prev]);
       setLastUpdate(new Date());
       // Refresh stats to stay in sync
@@ -259,6 +273,17 @@ const Dashboard = () => {
           </div>
           <button className="btn btn-refresh" onClick={fetchData}>
             <i className="fa-solid fa-sync"></i> Actualiser
+          </button>
+          <button
+            style={{ marginLeft: '8px', background: '#e53e3e', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer', fontWeight: 'bold' }}
+            onClick={async () => {
+              if (!window.confirm('Supprimer TOUTES les alertes ?')) return;
+              await deleteAllAlerts();
+              setAlerts([]);
+              fetchStats();
+            }}
+          >
+            🗑️ Tout supprimer
           </button>
         </div>
       </div>

@@ -144,6 +144,14 @@ def create_alert():
         alert_type = data.get('alert_type', 'general')
         severity = data.get('severity', 'medium')
 
+        # ── RÈGLE STRICTE : l'ID DOIT respecter le format PATxxx ───────────────
+        import re
+        if not patient_id or not re.match(r"^PAT\d+$", str(patient_id).strip(), re.IGNORECASE):
+            print(f"[ALERTE BLOQUÉE] patient_id invalide ('{patient_id}') — requête refusée.")
+            return jsonify({"success": False, "error": "patient_id doit être de la forme PATxxx"}), 400
+        patient_id = str(patient_id).strip().upper()
+        # ──────────────────────────────────────────────────────────────────────────────────────
+
         # Support legacy format from emotion_detection/alert_system.py
         if 'priority' in data:
             severity = 'high' if data['priority'] >= 2 else 'medium'
@@ -160,7 +168,17 @@ def create_alert():
 
         alert_id = cursor.lastrowid
         conn.commit()
+
+        # Récupérer patient_name et room_number pour le payload WebSocket
+        cursor.execute("""
+            SELECT first_name || ' ' || last_name as patient_name, room_number
+            FROM patients WHERE patient_id = ?
+        """, (patient_id,))
+        prow = cursor.fetchone()
         conn.close()
+
+        patient_name = prow["patient_name"] if prow else None
+        room_number = prow["room_number"] if prow else None
 
         print(f"✓ Alerte #{alert_id} créée: [{severity.upper()}] {message[:80]}")
 
@@ -168,6 +186,8 @@ def create_alert():
         alert_payload = {
             "id": alert_id,
             "patient_id": patient_id,
+            "patient_name": patient_name,
+            "room_number": room_number,
             "alert_type": alert_type,
             "severity": severity,
             "message": message,
@@ -400,6 +420,29 @@ def get_alert_details(alert_id):
             "success": False,
             "error": str(e)
         }), 500
+
+
+@alerts_bp.route('/delete_all', methods=['DELETE'])
+def delete_all_alerts():
+    """
+    DELETE /api/alerts/delete_all
+
+    Supprime toutes les alertes de la base de données.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM alerts")
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "success": True,
+            "deleted": deleted,
+            "message": f"{deleted} alerte(s) supprimée(s)"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @alerts_bp.route('/stats', methods=['GET'])

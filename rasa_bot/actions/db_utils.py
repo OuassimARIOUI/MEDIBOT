@@ -129,7 +129,13 @@ def get_patient_discharge_date(patient_id: str) -> Optional[str]:
 def insert_alert(message: str, patient_id: str = "UNKNOWN") -> None:
     """
     Insère une alerte dans la base de données.
+    RÈGLE STRICTE : l'ID DOIT respecter le format PATxxx, sinon rien n'est inséré.
     """
+    import re
+    if not patient_id or not re.match(r"^PAT\d+$", str(patient_id).strip(), re.IGNORECASE):
+        print(f"[ALERTE BLOQUÉE] patient_id invalide ('{patient_id}') — doit être PATxxx")
+        return
+
     conn = get_connection()
     cursor = conn.cursor()
 

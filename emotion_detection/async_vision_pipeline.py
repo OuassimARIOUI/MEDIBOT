@@ -55,6 +55,18 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+# ── Flag partagé : la surveillance \u00e9motionnelle est activ\u00e9e seulement
+#    quand Rasa \u00e9crit logs/vision_enabled.flag (apr\u00e8s r\u00e9ponse du patient
+#    \u00e0 la question "Est-ce que vous allez bien ?")
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_VISION_FLAG_PATH = os.path.join(_PROJECT_ROOT, "logs", "vision_enabled.flag")
+
+
+def _vision_enabled() -> bool:
+    """Retourne True si Rasa a autorisé la surveillance émotionnelle."""
+    return os.path.exists(_VISION_FLAG_PATH)
+
+
 class AnalysisType(Enum):
     """Types d'analyses visuelles."""
     EMOTION = "emotion"
@@ -280,7 +292,12 @@ class EmotionWorker(threading.Thread):
         
         while self._running:
             start_time = time.time()
-            
+
+            # Gate : pas de DeepFace tant que Rasa n'a pas activé la surveillance
+            if not _vision_enabled():
+                time.sleep(0.5)
+                continue
+
             # Récupérer le frame le plus récent
             frame_data = self._buffer.get()
             if frame_data is not None:
@@ -377,7 +394,12 @@ class EmergencyWorker(threading.Thread):
         
         while self._running:
             start_time = time.time()
-            
+
+            # Gate : pas d'analyse d'urgence tant que la surveillance n'est pas activée
+            if not _vision_enabled():
+                time.sleep(0.5)
+                continue
+
             frame_data = self._buffer.get()
             if frame_data is not None:
                 frame, timestamp = frame_data
@@ -506,7 +528,20 @@ class AsyncVisionPipeline:
         self._last_id_request_time = 0.0
         self._id_request_cooldown  = 30.0  # secondes entre deux demandes
 
-        logger.info("AsyncVisionPipeline initialisé")
+        # ── Gate d'activation de la surveillance émotionnelle ───────────────
+        # Rasa écrit le flag logs/vision_enabled.flag quand la conversation
+        # justifie une surveillance (patient dit qu'il ne va pas bien, etc.).
+        # Tant que le flag n'existe pas, aucune alerte n'est générée.
+        self._vision_flag_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "logs", "vision_enabled.flag"
+        )
+
+        logger.info("AsyncVisionPipeline initialisé (surveillance émotionnelle en attente d'activation par Rasa)")
+
+    def _is_vision_monitoring_enabled(self) -> bool:
+        """Retourne True si Rasa a activé la surveillance (flag fichier présent)."""
+        return os.path.exists(self._vision_flag_path)
 
     # ── Helpers identification ─────────────────────────────────────────────
 
@@ -554,7 +589,7 @@ class AsyncVisionPipeline:
         2. DB remplie par Rasa via ActionIdentifyPatient
         Retourne True si identifié, met à jour self._patient_id en cache.
         """
-        if self._patient_id != "UNKNOWN":
+        if self._patient_id and self._patient_id.upper() not in ("UNKNOWN", "INCONNU", "NONE", "NULL", ""):
             return True
         db_id = self._get_db_patient_id()
         if db_id:
@@ -563,6 +598,18 @@ class AsyncVisionPipeline:
             self._emergency_worker._patient_id = db_id   # propager au worker
             return True
         return False
+
+    def _write_emergency_flag(self, reason: str) -> None:
+        """Écrit un fichier flag pour signaler une urgence active au pont vocal."""
+        try:
+            flag = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "logs", "emergency.flag"
+            )
+            with open(flag, "w", encoding="utf-8") as fh:
+                fh.write(f"{time.time()}\n{reason}")
+        except Exception as e:
+            logger.debug(f"Impossible d'écrire le flag d'urgence: {e}")
 
     def _ask_for_identification(self) -> None:
         """
@@ -603,6 +650,8 @@ class AsyncVisionPipeline:
                 reason=reason,
                 patient_id=self._patient_id,
             )
+            # Signaler au pont vocal que le dialogue doit être suspendu
+            self._write_emergency_flag(reason)
             if self._leds:
                 try:
                     self._leds.fadeRGB("FaceLeds", 0xFF0000, 0.5)
@@ -614,6 +663,14 @@ class AsyncVisionPipeline:
         if self._started:
             return
         
+        # État initial propre : surveillance désactivée jusqu'à autorisation Rasa
+        try:
+            if os.path.exists(_VISION_FLAG_PATH):
+                os.remove(_VISION_FLAG_PATH)
+                logger.info("Flag vision_enabled.flag nettoyé au démarrage")
+        except Exception:
+            pass
+
         logger.info("Démarrage AsyncVisionPipeline...")
         self._capture_worker.start()
         self._emotion_worker.start()
@@ -668,7 +725,17 @@ class AsyncVisionPipeline:
 
         Returns:
             Liste des résultats traités
-        """
+        """        # ── Gate : Rasa doit avoir activé la surveillance ───────────────────
+        # Tant que le flag n'existe pas, on purge la queue sans rien traiter.
+        # Le dialogue social reste donc parfaitement neutre au démarrage.
+        if not self._is_vision_monitoring_enabled():
+            # Vider la queue pour éviter l'accumulation
+            while True:
+                try:
+                    self._result_queue.get_nowait()
+                except Empty:
+                    break
+            return []
         # Tenter d'envoyer une alerte d'urgence différée si le patient est
         # maintenant identifié (identificationvocale traitée par Rasa)
         self._fire_pending_emergency()
@@ -714,6 +781,9 @@ class AsyncVisionPipeline:
             patient_id=patient_id
         )
 
+        # Signaler au pont vocal que le dialogue doit être suspendu
+        self._write_emergency_flag(result.value)
+
         # LEDs rouges clignotantes
         if self._leds:
             try:
@@ -724,7 +794,7 @@ class AsyncVisionPipeline:
         # Message vocal d'alerte
         if self._tts:
             try:
-                self._tts.say("")
+                self._tts.say("Urgence détectée. L'équipe médicale a été alertée.")
             except Exception:
                 pass
     

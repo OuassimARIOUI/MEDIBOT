@@ -24,8 +24,8 @@ def get_medibot_reaction(emotion):
         },
         "sad": {
             "msg": "Oh, vous semblez triste... Est-ce que je peux faire quelque chose ?",
-            "leds": "BLEU (Doux)",
-            "led_hex": 0x0055FF,
+            "leds": "ORANGE (Doux)",
+            "led_hex": 0xFF9933,
             "gesture": "Inclinaison de la tête (Empathie)",
             "alert": True,
             "severity": "medium"

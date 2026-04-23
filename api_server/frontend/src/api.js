@@ -80,6 +80,14 @@ export const getAlertStats = () => {
   return apiClient.get('/alerts/stats');
 };
 
+/**
+ * Delete all alerts
+ * @returns {Promise}
+ */
+export const deleteAllAlerts = () => {
+  return apiClient.delete('/alerts/delete_all');
+};
+
 
 // ============================================================================
 // PATIENT ENDPOINTS

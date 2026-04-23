@@ -13,7 +13,7 @@ stories:
     - action: action_session_start
     - intent: identify_patient
     - action: action_identify_patient
-    - action: utter_ask_wellbeing
+    - action: action_ask_wellbeing
     - intent: check_feeling_good
     - action: action_propose_activity
     - intent: request_song
@@ -27,7 +27,7 @@ stories:
     - action: action_session_start
     - intent: identify_patient
     - action: action_identify_patient
-    - action: utter_ask_wellbeing
+    - action: action_ask_wellbeing
     - intent: check_feeling_good
     - action: action_propose_activity
     - intent: request_discussion
@@ -42,7 +42,7 @@ stories:
     - action: action_session_start
     - intent: identify_patient
     - action: action_identify_patient
-    - action: utter_ask_wellbeing
+    - action: action_ask_wellbeing
     - intent: check_feeling_good
     - action: action_propose_activity
     - intent: deny
@@ -55,7 +55,7 @@ stories:
     - action: action_session_start
     - intent: identify_patient
     - action: action_identify_patient
-    - action: utter_ask_wellbeing
+    - action: action_ask_wellbeing
     - intent: check_feeling_bad
     - action: action_ask_help
     - intent: affirm
@@ -68,7 +68,7 @@ stories:
     - action: action_session_start
     - intent: identify_patient
     - action: action_identify_patient
-    - action: utter_ask_wellbeing
+    - action: action_ask_wellbeing
     - intent: check_feeling_bad
     - action: action_ask_help
     - intent: deny
@@ -84,7 +84,7 @@ stories:
     - action: action_session_start
     - intent: identify_patient
     - action: action_identify_patient
-    - action: utter_ask_wellbeing
+    - action: action_ask_wellbeing
     - intent: check_feeling_bad
     - action: action_ask_help
     - intent: deny
@@ -211,3 +211,4 @@ stories:
   steps:
     - intent: greet
     - action: utter_greet
+

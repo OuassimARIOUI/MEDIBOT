@@ -21,7 +21,17 @@ rules:
   steps:
     - intent: identify_patient
     - action: action_identify_patient
-    - action: utter_ask_wellbeing
+    - action: action_ask_wellbeing
+
+
+# =============================================
+# RÈGLE : Patient silencieux trop longtemps
+# =============================================
+
+- rule: silence prolonge du patient
+  steps:
+    - intent: silence_timeout
+    - action: action_handle_silence_timeout
 
 
 # =============================================
@@ -42,6 +52,32 @@ rules:
   steps:
     - intent: check_feeling_bad
     - action: action_ask_help
+
+
+# =============================================
+# RÈGLE : Patient dit OUI (contexte wellness = "ça va bien ?")
+# =============================================
+
+- rule: patient confirme wellness
+  condition:
+    - slot_was_set:
+      - asked_wellness: true
+  steps:
+    - intent: affirm
+    - action: action_handle_affirm
+
+
+# =============================================
+# RÈGLE : Patient dit NON (contexte wellness = "ça va bien ?")
+# =============================================
+
+- rule: patient refuse wellness
+  condition:
+    - slot_was_set:
+      - asked_wellness: true
+  steps:
+    - intent: deny
+    - action: action_handle_deny
 
 
 # =============================================
