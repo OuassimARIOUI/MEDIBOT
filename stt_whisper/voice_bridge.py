@@ -63,6 +63,39 @@ _EMERGENCY_FLAG = os.path.join(
     "logs", "emergency.flag"
 )
 _last_emergency_announce: float = 0.0  # horodatage de la dernière annonce TTS urgence
+_EMERGENCY_FLAG_TTL = 120  # secondes — le flag expire après 2 min (urgence gérée)
+
+
+def _is_vision_emergency_active() -> bool:
+    """
+    Vérifie si le pipeline vision a signalé une urgence via le fichier flag.
+    Le flag expire automatiquement après _EMERGENCY_FLAG_TTL secondes
+    pour éviter de bloquer le dialogue indéfiniment.
+    """
+    if not os.path.exists(_EMERGENCY_FLAG):
+        return False
+    try:
+        with open(_EMERGENCY_FLAG, "r", encoding="utf-8") as f:
+            first_line = f.readline().strip()
+        ts = float(first_line)
+        age = time.time() - ts
+        if age > _EMERGENCY_FLAG_TTL:
+            # Flag expiré → nettoyer et reprendre le dialogue
+            _clear_emergency_flag()
+            return False
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _clear_emergency_flag() -> None:
+    """Supprime le flag d'urgence (reprend le dialogue)."""
+    try:
+        if os.path.exists(_EMERGENCY_FLAG):
+            os.remove(_EMERGENCY_FLAG)
+            print("[URGENCE] 🟢 Flag d'urgence nettoyé — dialogue reprend.")
+    except OSError:
+        pass
 
 # --- Détection du mode (Pepper vs PC) ---
 PEPPER_IP = os.getenv("PEPPER_IP")
@@ -488,26 +521,8 @@ def _record_pc() -> np.ndarray:
 # UTILITAIRES
 # ===================================================================
 
-def _is_vision_emergency_active() -> bool:
-    """
-    Vérifie si une urgence vitale a été détectée par la caméra.
-    Lit le fichier flag écrit par async_vision_pipeline.
-    Le flag expire automatiquement après 10 minutes.
-    """
-    if not os.path.exists(_EMERGENCY_FLAG):
-        return False
-    try:
-        with open(_EMERGENCY_FLAG, encoding="utf-8") as _f:
-            ts = float(_f.readline().strip())
-        if time.time() - ts > 600:  # expire après 10 min
-            try:
-                os.remove(_EMERGENCY_FLAG)
-            except Exception:
-                pass
-            return False
-        return True
-    except Exception:
-        return False
+
+
 
 
 def has_speech(audio_data: np.ndarray, threshold: float = MIN_ENERGY_THRESHOLD) -> bool:
@@ -607,6 +622,24 @@ def run_voice_loop(is_emergency_fn=None) -> None:
         print("[WARN] ⚠️ Rasa n'a pas répondu après 2 min. On continue quand même.\n")
 
     while True:
+        # ── GARDE D'URGENCE ──────────────────────────────────────────
+        # Si l'orchestrateur (ou le flag fichier) signale une urgence
+        # vitale, on suspend totalement l'écoute/dialogue pour ne pas
+        # interférer avec les annonces TTS d'urgence.
+        _emergency_active = False
+        if is_emergency_fn is not None and is_emergency_fn():
+            _emergency_active = True
+        elif _is_vision_emergency_active():
+            _emergency_active = True
+
+        if _emergency_active:
+            global _awaiting_answer_until
+            _awaiting_answer_until = 0.0        # désarmer tout timer de silence
+            print("\n🚨 [URGENCE] Dialogue suspendu — urgence vitale en cours...")
+            time.sleep(2)                       # réessaie dans 2 s
+            continue
+        # ─────────────────────────────────────────────────────────────
+
         icon = "🤖" if USE_PEPPER else "🎤"
         if USE_PEPPER:
             print(f"\n{icon} --- ÉCOUTE Pepper ({DURATION}s)... ---")
@@ -617,7 +650,6 @@ def run_voice_loop(is_emergency_fn=None) -> None:
 
         # VAD renvoie array vide = rien entendu → vérifier si on attendait une réponse critique
         if recording.size == 0:
-            global _awaiting_answer_until
             if _awaiting_answer_until > 0 and time.time() >= _awaiting_answer_until:
                 print("\n[VAD] 🔕 Silence de 5s après question critique → notification Rasa")
                 _awaiting_answer_until = 0.0  # désarmer avant l'envoi

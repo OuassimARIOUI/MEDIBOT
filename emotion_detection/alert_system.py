@@ -183,6 +183,11 @@ class AlertSystem:
 
         timestamp = datetime.datetime.now().isoformat()
 
+        # Anti-spam : ignorer les alertes identiques trop rapprochées
+        if self._is_rate_limited(alert_type, reason):
+            logger.debug(f"Alerte ignorée (rate limit) : [{alert_type}] {reason[:40]}")
+            return False
+
         # Log console visible
         print(f"--- [ALERTE NIVEAU {level}] [{severity.upper()}] : {reason} ---")
 

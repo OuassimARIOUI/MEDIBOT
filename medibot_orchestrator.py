@@ -235,7 +235,13 @@ def vision_thread_fn(
     - Urgence   → ctx.set_emergency()  : verrouille le dialogue audio
     - Détresse  → ctx.set_alert()      : alerte soignant, dialogue continue
     - Neutre    → ctx.set_idle()       : remet à IDLE si on était en ALERT
+
+    Stabilisation : une émotion de détresse doit être confirmée sur
+    EMOTION_ALERT_THRESHOLD frames consécutives avant de déclencher ALERT.
     """
+    EMOTION_ALERT_THRESHOLD = 3   # frames consécutives requises
+    NEUTRAL_RECOVERY_THRESHOLD = 3  # frames neutres consécutives pour dé-alerter
+
     try:
         from video_stream import VideoStream
         from async_vision_pipeline import AsyncVisionPipeline, AnalysisType
@@ -259,6 +265,11 @@ def vision_thread_fn(
     pipeline.start()
     logger.info("Thread vision démarré")
 
+    # Compteurs de stabilisation
+    _distress_streak = 0   # frames consécutives avec émotion de détresse
+    _neutral_streak = 0    # frames consécutives avec émotion neutre/positive
+    _distress_emotions = {"angry", "fear", "sad", "disgust"}
+
     try:
         while not stop_event.is_set():
             results = pipeline.process_results()
@@ -266,16 +277,27 @@ def vision_thread_fn(
             for result in results:
                 if result.type == AnalysisType.EMERGENCY:
                     # Urgence vitale : verrouiller immédiatement le dialogue
+                    # (la stabilisation est déjà faite dans EmergencyDetector)
                     ctx.set_emergency(result.value)
+                    _distress_streak = 0
+                    _neutral_streak = 0
 
                 elif result.type == AnalysisType.EMOTION:
                     ctx.last_emotion = result.value
-                    if result.value in ("angry", "fear", "sad", "disgust"):
-                        # Détresse émotionnelle : alerter sans bloquer le dialogue
-                        ctx.set_alert(result.value)
-                    elif ctx.state == RobotState.ALERT:
-                        # Retour à une émotion neutre : lever l'état d'alerte
-                        ctx.set_idle()
+
+                    if result.value in _distress_emotions:
+                        _distress_streak += 1
+                        _neutral_streak = 0
+                        if _distress_streak >= EMOTION_ALERT_THRESHOLD:
+                            # Détresse confirmée → alerter
+                            ctx.set_alert(result.value)
+                    else:
+                        _neutral_streak += 1
+                        _distress_streak = 0
+                        if _neutral_streak >= NEUTRAL_RECOVERY_THRESHOLD \
+                                and ctx.state == RobotState.ALERT:
+                            # Retour confirmé à une émotion neutre → lever l'alerte
+                            ctx.set_idle()
 
             time.sleep(0.1)
 

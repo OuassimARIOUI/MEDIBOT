@@ -143,24 +143,24 @@ class EmotionPipeline:
         from emotion_rules import get_medibot_reaction
         reaction = get_medibot_reaction(emotion)
 
-        # Cooldown : ne pas repeter la meme reaction trop vite
+        # 1. LEDs Pepper — TOUJOURS (retour visuel immédiat, pas de cooldown)
+        self._set_leds(reaction["led_hex"])
+
+        # Cooldown : ne pas repeter la meme reaction vocale/alerte trop vite
         now = time.time()
         if now - self._last_reaction_time.get(emotion, 0) < REACTION_COOLDOWN:
             return
         self._last_reaction_time[emotion] = now
 
-        # 1. LEDs Pepper
-        self._set_leds(reaction["led_hex"])
-
-        # 2. Message vocal
-        if reaction["msg"]:
+        # 2. Message vocal (seulement si défini et pertinent)
+        if reaction.get("msg"):
             self._say(reaction["msg"])
             print(f"  [Reaction] {reaction['gesture']} | {reaction['leds']}")
 
         # 3. Enregistrer l'emotion dans la BD (emotion_logs) -- TOUJOURS
         self._log_emotion_to_db(emotion, reaction.get("severity", "low"))
 
-        # 3. Alerte soignant si nécessaire
+        # 4. Alerte soignant si nécessaire
         if reaction.get("alert"):
             self._send_alert(emotion, reaction["severity"])
 
@@ -176,7 +176,24 @@ class EmotionPipeline:
             logger.debug(f"[SIM LED] #{hex_color:06X}")
 
     def _say(self, text: str) -> None:
-        """Fait parler Pepper (ALTextToSpeech) ou logge en mode PC."""
+        """
+        Fait parler Pepper (ALTextToSpeech) ou logge en mode PC.
+
+        NOTE : Quand voice_bridge tourne (mode run.py --pepper), le TTS
+        est géré par voice_bridge. On ne parle PAS directement ici pour
+        éviter les conflits audio (deux phrases en même temps).
+        On se contente de logger le message.
+        """
+        # Vérifier si voice_bridge est actif (il crée un fichier .pid ou le flag vision)
+        # En mode séparé, on ne fait que logger — les LEDs suffisent comme retour visuel.
+        if os.path.exists(os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "logs", "vision_enabled.flag"
+        )):
+            # voice_bridge est actif → pas de TTS direct
+            print(f"  [EMOTION TTS] (supprimé, voice_bridge actif) {text}")
+            return
+
         if self._tts is not None:
             try:
                 self._tts.say(text)
@@ -195,3 +212,14 @@ class EmotionPipeline:
             reason=reason,
             patient_id=self.patient_id
         )
+
+    def _log_emotion_to_db(self, emotion: str, severity: str) -> None:
+        """Enregistre l'émotion dans la table emotion_logs via AlertSystem."""
+        try:
+            self._alert_system.log_emotion(
+                patient_id=self.patient_id,
+                emotion=emotion,
+                severity=severity or "low"
+            )
+        except Exception as e:
+            logger.debug(f"Erreur log émotion BD: {e}")

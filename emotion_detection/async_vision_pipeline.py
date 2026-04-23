@@ -539,6 +539,14 @@ class AsyncVisionPipeline:
 
         logger.info("AsyncVisionPipeline initialisé (surveillance émotionnelle en attente d'activation par Rasa)")
 
+        # ── Stabilisation émotionnelle ───────────────────────────────────
+        # Les alertes émotionnelles ne sont envoyées que si la même émotion
+        # de détresse est détectée EMOTION_STABILITY_COUNT fois consécutives.
+        self._emotion_buffer = []            # tampon de stabilité
+        self._emotion_alert_cooldown = 30.0  # secondes entre deux alertes émotionnelles
+        self._last_emotion_alert_time = 0.0
+        self._EMOTION_STABILITY_COUNT = 3
+
     def _is_vision_monitoring_enabled(self) -> bool:
         """Retourne True si Rasa a activé la surveillance (flag fichier présent)."""
         return os.path.exists(self._vision_flag_path)
@@ -799,28 +807,49 @@ class AsyncVisionPipeline:
                 pass
     
     def _handle_emotion(self, result: AnalysisResult):
-        """Gère une détection d'émotion."""
+        """Gère une détection d'émotion avec stabilisation et rate-limiting."""
         emotion = result.value
         self._last_emotion = emotion
-        
+
+        # Stabilisation : tampon de N détections consécutives
+        self._emotion_buffer.append(emotion)
+        if len(self._emotion_buffer) > self._EMOTION_STABILITY_COUNT:
+            self._emotion_buffer.pop(0)
+
         # Importer les règles de réaction
         try:
             from emotion_rules import get_medibot_reaction
             reaction = get_medibot_reaction(emotion)
-            
-            # LEDs selon l'émotion
+
+            # LEDs selon l'émotion (toujours, même sans alerte)
             if self._leds and reaction.get("led_hex"):
                 try:
                     self._leds.fadeRGB("FaceLeds", reaction["led_hex"], 1.0)
                 except Exception:
                     pass
-            
-            # Alerte si émotion critique
+
+            # Alerte uniquement si :
+            #   1. L'émotion est marquée comme alertante
+            #   2. L'émotion est STABLE (N détections consécutives identiques)
+            #   3. Le cooldown est respecté (pas de spam)
             if reaction.get("alert"):
+                # Vérifier la stabilité : toutes les détections récentes sont la même
+                if len(self._emotion_buffer) < self._EMOTION_STABILITY_COUNT:
+                    return  # Pas assez de données
+                if not all(e == emotion for e in self._emotion_buffer):
+                    return  # Pas stable
+
+                # Cooldown anti-spam
+                now = time.time()
+                if now - self._last_emotion_alert_time < self._emotion_alert_cooldown:
+                    return
+                self._last_emotion_alert_time = now
+
                 # Identification obligatoire avant toute alerte
                 if not self._resolve_patient_id():
                     self._ask_for_identification()
                     return  # Pas d'alerte pour un patient inconnu
+
                 sev = reaction.get("severity", "medium")
                 self._alert_system.send_alert(
                     level=2 if sev in ("high", "critical") else 1,

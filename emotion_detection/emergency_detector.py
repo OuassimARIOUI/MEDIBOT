@@ -3,13 +3,16 @@ emergency_detector.py -- Detection d'urgences medicales.
 
 Detecte :
   - Signe d'etouffement (mains a la gorge) via MediaPipe Pose
-  - Absence de respiration (pas de mouvement thoracique pendant 10s)
+  - Absence de respiration (pas de mouvement thoracique pendant 15s)
 
-Quand une urgence est detectee :
-  1. Alerte CRITIQUE inseree dans la BD SQLite (severity='critical')
-  2. Dashboard Flask mis a jour en temps reel
-  3. Infirmiers notifies immediatement via mail_service
-  4. Robot Pepper alerte vocalement l'entourage (si connecte)
+ARCHITECTURE :
+  EmergencyDetector est un detecteur PURE : il retourne (bool, str)
+  sans envoyer d'alertes lui-meme. La gestion des alertes (BD, dashboard,
+  notifications, TTS) est deleguee au pipeline appelant (AsyncVisionPipeline).
+
+  Stabilisation : chaque urgence doit etre confirmee sur
+  EMERGENCY_CONFIRM_THRESHOLD frames consecutives pour eviter
+  les faux positifs.
 """
 
 import cv2
@@ -22,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 # Cooldown entre deux alertes identiques (eviter le spam)
 EMERGENCY_COOLDOWN = 30  # secondes
+
+# Nombre de frames consécutives requises avant de confirmer une urgence
+# (évite les faux positifs sur un seul frame MediaPipe)
+EMERGENCY_CONFIRM_THRESHOLD = 3
 
 
 class EmergencyDetector:
@@ -49,23 +56,18 @@ class EmergencyDetector:
         self.patient_id = patient_id
         self.pepper_session = pepper_session
 
-        # AlertSystem enrichi
-        from alert_system import AlertSystem
-        self._alert_system = AlertSystem(dashboard_url=dashboard_url)
-
-        # TTS Pepper (optionnel)
-        self._tts = None
-        if pepper_session is not None:
-            try:
-                self._tts = pepper_session.service("ALTextToSpeech")
-                self._tts.setLanguage("French")
-            except Exception as e:
-                logger.warning(f"TTS Pepper indisponible: {e}")
+        # NOTE : Les alertes sont désormais envoyées UNIQUEMENT par le pipeline
+        # (AsyncVisionPipeline._handle_emergency). EmergencyDetector se contente
+        # de DÉTECTER et de RETOURNER le résultat.
 
         # Parametres Respiration
         self.prev_roi_gray = None
         self.motion_history = []
         self.last_check_time = time.time()
+
+        # Stabilisation : compteurs de confirmations consécutives
+        self._choking_count = 0     # frames consécutives avec signe d'étouffement
+        self._no_breath_count = 0   # secondes sans mouvement thoracique
 
         # Cooldown pour eviter les alertes repetees
         self._last_alert_time = {}  # reason_type -> timestamp
@@ -74,10 +76,12 @@ class EmergencyDetector:
         """
         Analyse complete : Respiration + Etouffement.
 
-        Quand une urgence est detectee, declenche automatiquement :
-          - Insertion BD (severity='critical')
-          - Notification infirmiers
-          - Alerte vocale Pepper
+        Retourne un tuple (urgence_détectée, raison) sans envoyer d'alerte.
+        Les alertes sont gérées par le pipeline appelant (AsyncVisionPipeline).
+
+        La détection utilise une stabilisation : un événement doit être
+        confirmé sur EMERGENCY_CONFIRM_THRESHOLD frames consécutives
+        avant d'être remonté.
 
         Returns:
             tuple: (emergency_detected: bool, reason: str)
@@ -89,25 +93,41 @@ class EmergencyDetector:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.pose.process(rgb_frame)
 
-        if results.pose_landmarks:
-            landmarks = results.pose_landmarks.landmark
+        if not results.pose_landmarks:
+            # Pas de pose détectée : remettre les compteurs à zéro
+            # (on ne déclare PAS d'urgence si on perd la personne)
+            self._choking_count = 0
+            return emergency_detected, reason
 
-            # 1. Test Etouffement (MediaPipe)
-            if self.detect_choking_sign(landmarks):
-                emergency_detected = True
-                reason = "Signe d'etouffement detecte (mains a la gorge)"
-                self._handle_emergency(reason, "choking")
-                return emergency_detected, reason
+        landmarks = results.pose_landmarks.landmark
 
-            # 2. Test Respiration Precis (Base sur les epaules detectees)
-            if not self.detect_breathing(frame, landmarks):
-                # Le cahier des charges impose 10s d'observation
-                if time.time() - self.last_check_time > 10:
+        # 1. Test Etouffement (MediaPipe) avec stabilisation
+        if self.detect_choking_sign(landmarks):
+            self._choking_count += 1
+            if self._choking_count >= EMERGENCY_CONFIRM_THRESHOLD:
+                # Cooldown anti-spam
+                now = time.time()
+                if now - self._last_alert_time.get("choking", 0) >= EMERGENCY_COOLDOWN:
                     emergency_detected = True
-                    reason = "Absence de respiration detectee (10s sans mouvement thoracique)"
-                    self._handle_emergency(reason, "no_breathing")
-            else:
-                self.last_check_time = time.time()  # Reset si mouvement detecte
+                    reason = "Signe d'etouffement detecte (mains a la gorge)"
+                    self._last_alert_time["choking"] = now
+                    logger.critical(f"URGENCE CONFIRMEE: {reason} (patient {self.patient_id})")
+                    return emergency_detected, reason
+        else:
+            self._choking_count = 0
+
+        # 2. Test Respiration Precis (Base sur les epaules detectees)
+        if not self.detect_breathing(frame, landmarks):
+            # Observation prolongée : 15s sans mouvement thoracique
+            if time.time() - self.last_check_time > 15:
+                now = time.time()
+                if now - self._last_alert_time.get("no_breathing", 0) >= EMERGENCY_COOLDOWN:
+                    emergency_detected = True
+                    reason = "Absence de respiration detectee (15s sans mouvement thoracique)"
+                    self._last_alert_time["no_breathing"] = now
+                    logger.critical(f"URGENCE CONFIRMEE: {reason} (patient {self.patient_id})")
+        else:
+            self.last_check_time = time.time()  # Reset si mouvement detecte
 
         return emergency_detected, reason
 
@@ -179,46 +199,8 @@ class EmergencyDetector:
     # ------------------------------------------------------------------
     # GESTION D'URGENCE
     # ------------------------------------------------------------------
-
-    def _handle_emergency(self, reason, reason_type):
-        """
-        Traitement complet d'une urgence detectee :
-          1. Cooldown (eviter le spam)
-          2. Insertion alerte CRITIQUE dans la BD
-          3. Envoi au dashboard Flask
-          4. Notification des infirmiers
-          5. Alerte vocale sur Pepper
-        """
-        # Cooldown : ne pas envoyer la meme alerte trop souvent
-        now = time.time()
-        if now - self._last_alert_time.get(reason_type, 0) < EMERGENCY_COOLDOWN:
-            return
-        self._last_alert_time[reason_type] = now
-
-        logger.critical(f"URGENCE DETECTEE: {reason} (patient {self.patient_id})")
-
-        # 1 + 2 + 3. Alerte critique -> BD + Dashboard + Notification
-        self._alert_system.send_emergency_alert(
-            reason=reason,
-            patient_id=self.patient_id
-        )
-
-        # 4. Alerte vocale sur Pepper
-        self._emergency_voice_alert(reason)
-
-    def _emergency_voice_alert(self, reason):
-        """Fait parler Pepper pour alerter l'entourage en cas d'urgence."""
-        emergency_msg = "Je vais chercher quelqu'un tout de suite."
-
-        # Note: Allumage des LEDs rouges comme demande dans le CDC 2.10
-        # est gere via le comportement specifique ou devrait etre declenche ici
-        if self._tts is not None:
-            try:
-                self._tts.say(emergency_msg)
-                logger.info("Alerte vocale Pepper diffusee")
-            except Exception as e:
-                logger.warning(f"Erreur TTS urgence: {e}")
-        else:
-            # Mode simulation PC
-            print(f"  [SIM TTS URGENCE] (Allumage LEDs rouges)")
-            print(f"  [SIM TTS URGENCE] {emergency_msg}")
+    # NOTE : La gestion des alertes (BD, dashboard, notifications, TTS)
+    # est ENTIÈREMENT déléguée au pipeline appelant (AsyncVisionPipeline).
+    # EmergencyDetector se limite à la DÉTECTION pure.
+    # Les anciens _handle_emergency / _emergency_voice_alert ont été
+    # retirés pour éviter les alertes en double.

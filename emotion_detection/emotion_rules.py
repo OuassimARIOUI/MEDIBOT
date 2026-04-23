@@ -15,7 +15,7 @@ def get_medibot_reaction(emotion):
     """
     reactions = {
         "happy": {
-            "msg": "Je vois que vous allez bien aujourd'hui !",
+            "msg": None,
             "leds": "VERT (Clignotant)",
             "led_hex": 0x00FF00,
             "gesture": "Animation de salut joyeux",
@@ -67,8 +67,8 @@ def get_medibot_reaction(emotion):
             "leds": "VIOLET (Fixe)",
             "led_hex": 0x6600AA,
             "gesture": "Posture neutre",
-            "alert": False,
-            "severity": None
+            "alert": True,
+            "severity": "medium"
         }
     }
     return reactions.get(emotion, reactions["neutral"])

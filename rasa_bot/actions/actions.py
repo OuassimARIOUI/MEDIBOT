@@ -59,14 +59,21 @@ def _enable_vision_monitoring(reason: str = "") -> None:
 
 
 def _disable_vision_monitoring() -> None:
-    """Retire le flag. À appeler en fin de conversation / reset."""
+    """Retire les flags vision + urgence. À appeler en fin de conversation / reset."""
     try:
         import os as _os
         project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-        flag_path = _os.path.join(project_root, "logs", "vision_enabled.flag")
-        if _os.path.exists(flag_path):
-            _os.remove(flag_path)
+        log_dir = _os.path.join(project_root, "logs")
+        # Nettoyer le flag de surveillance émotionnelle
+        vision_flag = _os.path.join(log_dir, "vision_enabled.flag")
+        if _os.path.exists(vision_flag):
+            _os.remove(vision_flag)
             print("[VISION] 🛑 Surveillance émotionnelle DÉSACTIVÉE")
+        # Nettoyer le flag d'urgence (pour ne pas bloquer la prochaine session)
+        emergency_flag = _os.path.join(log_dir, "emergency.flag")
+        if _os.path.exists(emergency_flag):
+            _os.remove(emergency_flag)
+            print("[VISION] 🟢 Flag d'urgence nettoyé")
     except Exception:
         pass
 
@@ -289,6 +296,11 @@ class ActionIdentifyPatient(Action):
                 except Exception as e_db:
                     print(f"[IDENTIFICATION] ⚠️ Erreur DB session : {e_db}")
 
+                # Activer la surveillance émotionnelle dès l'identification
+                # → permet aux LEDs de réagir aux émotions du patient
+                #   (sourire → vert, triste → bleu, etc.)
+                _enable_vision_monitoring(f"patient identifié : {full_name}")
+
                 # Stocker dans les slots (mémoire du bot)
                 return [
                     SlotSet("first_name", db_first),
@@ -378,7 +390,9 @@ class ActionSessionStart(Action):
         dispatcher.utter_message(
             text="Bonsoir, c'est Pepper, je viens prendre soin de vous. Quel est votre nom ?"
         )
-        # Reset les slots de contexte
+        # Reset les slots de contexte et nettoyer le flag vision
+        # (au cas où il resterait d'une session précédente)
+        _disable_vision_monitoring()
         return [
             SlotSet("asked_emergency", False),
             SlotSet("asked_activity", False),
@@ -408,9 +422,10 @@ class ActionProposeActivity(Action):
         if already_asked:
             return []
 
-        # Le patient a déclaré aller bien → activer la surveillance émotionnelle
-        # pour vérifier la congruence entre la parole et l'expression faciale
-        _enable_vision_monitoring("patient dit aller bien - vérification émotionnelle")
+        # NOTE : On n'active PAS la surveillance émotionnelle ici.
+        # Le patient va bien → pas besoin de surveillance immédiate.
+        # La vision sera activée uniquement si un événement inquiétant
+        # survient plus tard (patient dit aller mal, refuse aide, etc.).
 
         dispatcher.utter_message(
             text="Parfait. Souhaitez-vous que je vous chante une chanson (je connais des chansons françaises traditionnelles) ou préférez-vous discuter ?"
@@ -478,6 +493,9 @@ class ActionAskHelp(Action):
             # Ne pas redemander
             return []
 
+        # Le patient ne va pas bien → activer la surveillance émotionnelle
+        _enable_vision_monitoring("patient signale ne pas aller bien")
+
         dispatcher.utter_message(
             text="Je suis désolé de l'entendre. Souhaitez-vous que j'appelle l'équipe d'urgence ?"
         )
@@ -514,10 +532,8 @@ class ActionHandleAffirm(Action):
 
         # ---- Contexte WELLNESS : "Est-ce que vous allez bien ?" → "Oui" ----
         if asked_wellness:
-            # Le patient dit qu'il va bien → activer la surveillance émotionnelle
-            # (vérification silencieuse : si le visage exprime tristesse/colère
-            # alors qu'il dit "oui", les LEDs et les alertes réagiront)
-            _enable_vision_monitoring("patient dit aller bien - vérification émotionnelle")
+            # Le patient dit qu'il va bien → pas besoin de surveillance.
+            # On propose simplement une activité.
             dispatcher.utter_message(
                 text="Parfait. Souhaitez-vous que je vous chante une chanson ou préférez-vous discuter ?"
             )
@@ -602,6 +618,8 @@ class ActionHandleDeny(Action):
 
         # ---- Contexte WELLNESS : "Est-ce que vous allez bien ?" → "Non" ----
         if asked_wellness:
+            # Le patient ne va pas bien → ACTIVER la surveillance émotionnelle
+            _enable_vision_monitoring("patient dit ne pas aller bien")
             # Équivalent à check_feeling_bad : proposer l'aide d'urgence
             dispatcher.utter_message(
                 text="Je suis désolé de l'entendre. Souhaitez-vous que j'appelle l'équipe d'urgence ?"
@@ -624,7 +642,8 @@ class ActionHandleDeny(Action):
                 SlotSet("asked_activity", True)  # Réutilise pour blague/musique
             ]
         elif asked_activity:
-            # Patient refuse l'activité → bonne nuit
+            # Patient refuse l'activité → bonne nuit + désactiver surveillance
+            _disable_vision_monitoring()
             dispatcher.utter_message(
                 text="Très bien, je vous laisse vous reposer. Bonne nuit !"
             )
