@@ -3,6 +3,14 @@ version: "3.1"
 nlu:
 
 
+# SILENCE PROLONGÉ (envoyé par le pont vocal après 5s sans réponse)
+
+- intent: silence_timeout
+  examples: |
+    - __silence_timeout__
+    - /silence_timeout
+
+
 # SALUTATIONS
 
 - intent: greet

@@ -22,6 +22,111 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB_PATH = os.path.join(_PROJECT_ROOT, "database", "medibot.db")
 
+# URL de l'API Rasa (tracker des slots)
+RASA_TRACKER_URL = os.getenv(
+    "RASA_URL", "http://localhost:5005"
+) + "/conversations/user_voice/tracker"
+
+# ==== RÈGLE MÉTIER STRICTE ============================================
+# Un patient valide a IMPÉRATIVEMENT un ID de la forme PATxxx (ex: PAT001).
+# Toute autre valeur (Inconnu, UNKNOWN, vide, etc.) est refusée.
+# ======================================================================
+import re
+_PAT_ID_RE = re.compile(r"^PAT\d+$", re.IGNORECASE)
+
+
+def is_valid_pat_id(pid) -> bool:
+    """Retourne True UNIQUEMENT si pid respecte le format PATxxx."""
+    if pid is None:
+        return False
+    try:
+        return bool(_PAT_ID_RE.match(str(pid).strip()))
+    except Exception:
+        return False
+
+
+def _query_rasa_patient_id() -> str:
+    """
+    Interroge l'API Rasa Tracker pour récupérer le slot patient_id
+    du dernier tour de conversation.
+
+    Endpoint : GET /conversations/user_voice/tracker
+    Slot visé : patient_id  (rempli par ActionIdentifyPatient)
+
+    Retourne un patient_id VALIDE (PATxxx) ou "UNKNOWN".
+    Timeout court (1 s) pour ne pas bloquer le pipeline vision.
+    """
+    try:
+        resp = requests.get(RASA_TRACKER_URL, timeout=1)
+        if resp.status_code == 200:
+            slots = resp.json().get("slots", {})
+            pid = slots.get("patient_id")
+            if is_valid_pat_id(pid):
+                return str(pid).strip().upper()
+    except Exception:
+        pass  # Rasa pas encore prêt ou coupé — on tente la BD
+    return "UNKNOWN"
+
+
+def _query_db_patient_id(db_path: str) -> str:
+    """
+    Lit le patient identifié depuis la table current_patient_session
+    (écrite par Rasa via set_current_patient dans db_utils.py).
+
+    Retourne le patient_id ou "UNKNOWN".
+    Session valide pendant 4 heures max.
+    """
+    try:
+        from datetime import datetime as dt, timedelta
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT patient_id, identified_at FROM current_patient_session WHERE id = 1"
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return "UNKNOWN"
+        patient_id, identified_at = row
+        try:
+            if dt.now() - dt.fromisoformat(str(identified_at)) > timedelta(hours=4):
+                return "UNKNOWN"  # Session expirée
+        except Exception:
+            pass  # En cas de format inattendu, accepter quand même
+        if patient_id and str(patient_id).strip().upper() not in ("UNKNOWN", ""):
+            return str(patient_id).strip()
+    except Exception as e:
+        logger.debug(f"[PATIENT CHECK] Erreur lecture DB session : {e}")
+    return "UNKNOWN"
+
+
+def resolve_patient_id(patient_id_hint: str, db_path: str) -> str:
+    """
+    Résout l'identité du patient de façon exhaustive :
+      1. Interroge l'API Rasa Tracker en priorité (source de vérité)
+      2. Sinon, lit la table current_patient_session (DB partagée)
+      3. Si hint déjà valide PATxxx → fallback accepté
+      4. Sinon retourne "UNKNOWN".
+    Ne retourne JAMAIS une valeur qui n'est pas de la forme PATxxx ou "UNKNOWN".
+    """
+    # 1. Rasa = source de vérité (pivot central)
+    pid = _query_rasa_patient_id()
+    if is_valid_pat_id(pid):
+        logger.info(f"[PATIENT CHECK] Patient résolu via Rasa Tracker : {pid}")
+        return str(pid).strip().upper()
+
+    # 2. Fallback : DB partagée (session patient active)
+    pid = _query_db_patient_id(db_path)
+    if is_valid_pat_id(pid):
+        logger.info(f"[PATIENT CHECK] Patient résolu via DB session : {pid}")
+        return str(pid).strip().upper()
+
+    # 3. Dernier recours : hint de l'appelant (uniquement si déjà valide)
+    if is_valid_pat_id(patient_id_hint):
+        return str(patient_id_hint).strip().upper()
+
+    return "UNKNOWN"
+
 
 class AlertSystem:
     """
@@ -36,6 +141,18 @@ class AlertSystem:
                  db_path=None):
         self.dashboard_url = dashboard_url
         self.db_path = db_path or DEFAULT_DB_PATH
+        # Anti-spam : cooldown par (alert_type, reason tronqué)
+        self._last_sent = {}       # {(type, reason_key): timestamp}
+        self._cooldown = 20.0      # secondes entre deux alertes identiques
+
+    def _is_rate_limited(self, alert_type: str, reason: str) -> bool:
+        key = (alert_type, (reason or "")[:40].lower())
+        now = datetime.datetime.now().timestamp()
+        last = self._last_sent.get(key, 0.0)
+        if now - last < self._cooldown:
+            return True
+        self._last_sent[key] = now
+        return False
 
     def send_alert(self, level, reason, patient_id="UNKNOWN",
                    alert_type="general", severity=None):
@@ -50,7 +167,38 @@ class AlertSystem:
             patient_id (str): identifiant du patient
             alert_type (str): 'emergency' | 'emotion' | 'general'
             severity (str): 'low' | 'medium' | 'high' | 'critical' (auto si None)
+
+        Retourne False immédiatement si le patient est INCONNU (aucun envoi,
+        aucune insertion en BD, aucune notification infirmier).
         """
+        # ══════════════════════════════════════════════════════════════
+        # VERROU D'IDENTIFICATION — RÈGLE STRICTE
+        # Toujours tenter de résoudre l'identité avant toute action.
+        # Si le patient reste INCONNU → abandon total de l'alerte.
+        # ══════════════════════════════════════════════════════════════
+        patient_id = resolve_patient_id(patient_id, self.db_path)
+
+        # ======================================================================
+        # VERROU STRICT : l'ID DOIT respecter le format PATxxx.
+        # Aucune alerte ne part sans identité vérifiée (cahier des charges).
+        # ======================================================================
+        if not is_valid_pat_id(patient_id):
+            print(
+                f"[ALERTE BLOQUÉE] Patient non identifié (id='{patient_id}') — "
+                f"aucune alerte envoyée ({alert_type} : {reason[:60]})"
+            )
+            logger.warning(
+                f"Alerte bloquée (ID invalide '{patient_id}') | type={alert_type} | reason={reason[:80]}"
+            )
+            return False  # ← sortie immédiate, RIEN n'est écrit ni envoyé
+
+        # Anti-spam : éviter de saturer le personnel avec des alertes dupliquées
+        if self._is_rate_limited(alert_type, reason):
+            logger.info(
+                f"[ANTI-SPAM] Alerte ignorée (cooldown {self._cooldown}s actif) : {reason[:60]}"
+            )
+            return False
+
         # Normaliser level en entier (defensive cast)
         try:
             level = int(level)
@@ -68,6 +216,20 @@ class AlertSystem:
 
         # Log console visible
         print(f"--- [ALERTE NIVEAU {level}] [{severity.upper()}] : {reason} ---")
+
+        # ── STATE MACHINE : urgence niveau 2 = priorité absolue ─────────────
+        # Écrire le flag partagé lu par voice_bridge pour couper le dialogue.
+        if level >= 2 or severity in ("high", "critical") or alert_type == "emergency":
+            try:
+                flag_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "logs", "emergency.flag"
+                )
+                os.makedirs(os.path.dirname(flag_path), exist_ok=True)
+                with open(flag_path, "w", encoding="utf-8") as fh:
+                    fh.write(f"{datetime.datetime.now().timestamp()}\n{reason}")
+            except Exception as e:
+                logger.debug(f"Impossible d'écrire emergency.flag : {e}")
 
         # 1. Inserer dans la BD SQLite (toujours, meme si Flask tombe)
         alert_id = self._insert_to_db(
@@ -142,7 +304,12 @@ class AlertSystem:
         """
         Enregistre une emotion detectee dans la table emotion_logs.
         Appelee pour CHAQUE emotion stable, meme les positives (happy, neutral).
+        Ignorée si le patient n'a pas un ID valide (PATxxx).
         """
+        patient_id = resolve_patient_id(patient_id, self.db_path)
+        if not is_valid_pat_id(patient_id):
+            logger.debug(f"log_emotion ignoré (ID invalide '{patient_id}') — émotion : {emotion}")
+            return None
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()

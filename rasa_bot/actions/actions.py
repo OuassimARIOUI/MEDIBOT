@@ -18,6 +18,7 @@ try:
         get_patient_discharge_date,
         get_all_patients,
         set_current_patient,
+        get_current_patient,
     )
     from alert_service import trigger_emergency_alert, trigger_nurse_call
 except ImportError:
@@ -30,8 +31,44 @@ except ImportError:
         get_patient_discharge_date,
         get_all_patients,
         set_current_patient,
+        get_current_patient,
     )
     from .alert_service import trigger_emergency_alert, trigger_nurse_call
+
+
+# ==========================================================
+# GATE DE SURVEILLANCE ÉMOTIONNELLE
+# La pipeline vision (/emotion_detection) est en sommeil tant que
+# Rasa n'a pas décidé que le contexte justifie une surveillance.
+# On active via un flag fichier partagé : logs/vision_enabled.flag
+# ==========================================================
+def _enable_vision_monitoring(reason: str = "") -> None:
+    """Crée le flag de surveillance. Lu par AsyncVisionPipeline.process_results()."""
+    try:
+        import os as _os
+        project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        flag_dir = _os.path.join(project_root, "logs")
+        _os.makedirs(flag_dir, exist_ok=True)
+        flag_path = _os.path.join(flag_dir, "vision_enabled.flag")
+        import time as _time
+        with open(flag_path, "w", encoding="utf-8") as fh:
+            fh.write(f"{_time.time()}\n{reason}")
+        print(f"[VISION] ✅ Surveillance émotionnelle ACTIVÉE — {reason}")
+    except Exception as _e:
+        print(f"[VISION] ⚠️ Impossible d'écrire le flag : {_e}")
+
+
+def _disable_vision_monitoring() -> None:
+    """Retire le flag. À appeler en fin de conversation / reset."""
+    try:
+        import os as _os
+        project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        flag_path = _os.path.join(project_root, "logs", "vision_enabled.flag")
+        if _os.path.exists(flag_path):
+            _os.remove(flag_path)
+            print("[VISION] 🛑 Surveillance émotionnelle DÉSACTIVÉE")
+    except Exception:
+        pass
 
 
 # ==========================================================
@@ -371,13 +408,44 @@ class ActionProposeActivity(Action):
         if already_asked:
             return []
 
+        # Le patient a déclaré aller bien → activer la surveillance émotionnelle
+        # pour vérifier la congruence entre la parole et l'expression faciale
+        _enable_vision_monitoring("patient dit aller bien - vérification émotionnelle")
+
         dispatcher.utter_message(
             text="Parfait. Souhaitez-vous que je vous chante une chanson (je connais des chansons françaises traditionnelles) ou préférez-vous discuter ?"
         )
         # Marquer qu'on a posé la question activité
         return [
             SlotSet("asked_activity", True),
-            SlotSet("asked_emergency", False)
+            SlotSet("asked_emergency", False),
+            SlotSet("asked_wellness", False),
+        ]
+
+
+
+# ======================================
+# ACTION : Demander comment va le patient (wellness)
+# ======================================
+
+class ActionAskWellbeing(Action):
+
+    def name(self) -> Text:
+        return "action_ask_wellbeing"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+
+        dispatcher.utter_message(text="Parfait ! Est-ce que vous allez bien ?")
+        # Marquer le contexte wellness pour router correctement un simple "oui"/"non"
+        return [
+            SlotSet("asked_wellness", True),
+            SlotSet("asked_emergency", False),
+            SlotSet("asked_activity", False),
         ]
 
 
@@ -416,7 +484,8 @@ class ActionAskHelp(Action):
         # Marquer qu'on a posé la question urgence
         return [
             SlotSet("asked_emergency", True),
-            SlotSet("asked_activity", False)
+            SlotSet("asked_activity", False),
+            SlotSet("asked_wellness", False),
         ]
 
 
@@ -439,16 +508,45 @@ class ActionHandleAffirm(Action):
 
         asked_emergency = tracker.get_slot("asked_emergency")
         asked_activity = tracker.get_slot("asked_activity")
+        asked_wellness = tracker.get_slot("asked_wellness")
         patient_id = tracker.get_slot("patient_id")
         patient_name = tracker.get_slot("patient_full_name")
-        
+
+        # ---- Contexte WELLNESS : "Est-ce que vous allez bien ?" → "Oui" ----
+        if asked_wellness:
+            # Le patient dit qu'il va bien → activer la surveillance émotionnelle
+            # (vérification silencieuse : si le visage exprime tristesse/colère
+            # alors qu'il dit "oui", les LEDs et les alertes réagiront)
+            _enable_vision_monitoring("patient dit aller bien - vérification émotionnelle")
+            dispatcher.utter_message(
+                text="Parfait. Souhaitez-vous que je vous chante une chanson ou préférez-vous discuter ?"
+            )
+            return [
+                SlotSet("asked_wellness", False),
+                SlotSet("asked_activity", True),
+                SlotSet("asked_emergency", False),
+            ]
+
         if asked_emergency:
-            # Déclencher l'alerte niveau 2
-            # Note: insert_alert est importé au niveau module, pas besoin de réimporter
-            try:
-                insert_alert(message="Urgence vitale potentielle - patient confirme", patient_id=patient_id or "UNKNOWN")
-            except Exception as e:
-                print(f"[ERREUR ALERT DB] {e}")
+            # Déclencher l'alerte niveau 2 + activer la surveillance émotionnelle
+            _enable_vision_monitoring("patient a confirmé vouloir de l'aide")
+
+            # Résoudre le patient depuis la session DB si le slot est vide
+            _eff_patient_id = patient_id
+            if not _eff_patient_id or _eff_patient_id.upper().strip() in ("UNKNOWN", ""):
+                try:
+                    _session = get_current_patient()
+                    if _session:
+                        _eff_patient_id = _session.get("patient_id", "")
+                except Exception:
+                    pass
+            if not _eff_patient_id or _eff_patient_id.upper().strip() in ("UNKNOWN", ""):
+                print("[URGENCE BLOQUÉE] Patient non identifié — alerte non insérée.")
+            else:
+                try:
+                    insert_alert(message="Urgence vitale potentielle - patient confirme", patient_id=_eff_patient_id)
+                except Exception as e:
+                    print(f"[ERREUR ALERT DB] {e}")
             
             if patient_name:
                 dispatcher.utter_message(
@@ -500,9 +598,24 @@ class ActionHandleDeny(Action):
 
         asked_emergency = tracker.get_slot("asked_emergency")
         asked_activity = tracker.get_slot("asked_activity")
-        
+        asked_wellness = tracker.get_slot("asked_wellness")
+
+        # ---- Contexte WELLNESS : "Est-ce que vous allez bien ?" → "Non" ----
+        if asked_wellness:
+            # Équivalent à check_feeling_bad : proposer l'aide d'urgence
+            dispatcher.utter_message(
+                text="Je suis désolé de l'entendre. Souhaitez-vous que j'appelle l'équipe d'urgence ?"
+            )
+            return [
+                SlotSet("asked_wellness", False),
+                SlotSet("asked_emergency", True),
+                SlotSet("asked_activity", False),
+            ]
+
         if asked_emergency:
-            # Patient refuse l'urgence → proposer confort
+            # Patient refuse d'appeler → on active la surveillance par précaution
+            # (il a dit ne pas aller bien, mais refuse de l'aide → signal à surveiller)
+            _enable_vision_monitoring("patient refuse aide après avoir dit ne pas aller bien")
             dispatcher.utter_message(
                 text="Souhaitez-vous que je vous raconte une blague ou que je vous mette une musique apaisante ?"
             )
@@ -855,6 +968,66 @@ class ActionGetMedicine(Action):
 
 
 
+# ======================================
+# ACTION : Patient ne répond pas (silence prolongé)
+# Déclenchée par l'intent silence_timeout envoyé par le pont vocal
+# après 5 s sans réponse suite à une question du robot.
+# ======================================
+class ActionHandleSilenceTimeout(Action):
+
+    def name(self) -> Text:
+        return "action_handle_silence_timeout"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+
+        asked_emergency = tracker.get_slot("asked_emergency")
+        patient_id = tracker.get_slot("patient_id")
+
+        if not asked_emergency:
+            # Silence hors contexte critique → simple relance
+            dispatcher.utter_message(
+                text="Je n'ai pas entendu votre réponse. Tout va bien ?"
+            )
+            return []
+
+        # Patient a dit ne pas aller bien, puis silence → alerte + surveillance
+        _enable_vision_monitoring("patient silencieux après déclaration de mal-être")
+
+        _eff_patient_id = patient_id
+        if not _eff_patient_id or _eff_patient_id.upper().strip() in ("UNKNOWN", ""):
+            try:
+                _session = get_current_patient()
+                if _session:
+                    _eff_patient_id = _session.get("patient_id", "")
+            except Exception:
+                pass
+
+        if _eff_patient_id and _eff_patient_id.upper().strip() not in ("UNKNOWN", ""):
+            try:
+                insert_alert(
+                    message="Patient silencieux après avoir signalé ne pas aller bien",
+                    patient_id=_eff_patient_id
+                )
+            except Exception as e:
+                print(f"[ERREUR ALERT DB] {e}")
+        else:
+            print("[URGENCE BLOQUÉE] Patient non identifié — alerte silence non insérée.")
+
+        dispatcher.utter_message(
+            text="Je ne vous entends pas. Je préviens l'équipe médicale par précaution. Restez calme, je suis là."
+        )
+        return [
+            SlotSet("asked_emergency", False),
+            SlotSet("emergency_handled", True),
+        ]
+
+
+
 # ACTION : Déclencher une alerte 
 
 class ActionTriggerAlert(Action):
@@ -1010,3 +1183,5 @@ class ActionCallNurse(Action):
                 )
 
         return []
+
+

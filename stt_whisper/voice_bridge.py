@@ -33,9 +33,36 @@ from whisper_listener import MediBotListener
 # --- CONFIGURATION ---
 RASA_URL = "http://localhost:5005/webhooks/rest/webhook"
 FS = 16000        # Fréquence d'échantillonnage Whisper
-DURATION = 3      # Durée d'enregistrement fixe (secondes)
+DURATION = 5      # Fallback : durée maximale d'enregistrement (sécurité VAD)
 TEMP_FILE = "temp_voice.wav"
 MIN_ENERGY_THRESHOLD = 0.003  # Seuil bas pour ne rien rater (0.01 filtrait trop)
+
+# ── Paramètres VAD (Voice Activity Detection) ───────────────────────────
+VAD_CHUNK_MS = 30                # taille d'une trame d'analyse (ms)
+VAD_START_THRESHOLD = 0.005      # énergie RMS requise pour déclencher l'enregistrement
+VAD_SILENCE_MS = 800             # silence requis pour fermer l'énoncé (end-pointing)
+VAD_PRE_ROLL_MS = 200            # on conserve 200 ms avant la détection (mot de début)
+VAD_MIN_SPEECH_MS = 400          # on rejette les bruits < 400 ms
+VAD_MAX_DURATION_S = 8           # plafond absolu (sécurité)
+VAD_LISTEN_TIMEOUT_S = 6         # si aucune voix détectée, on relâche la main
+
+# ── Silence timeout après une question critique ────────────────────────
+# Si le bot a posé une question qui attend une réponse et que le patient
+# reste silencieux plus de SILENCE_TIMEOUT_S secondes, on notifie Rasa.
+SILENCE_TIMEOUT_S = 5
+_awaiting_answer_until: float = 0.0  # timestamp limite pour une réponse
+_silence_keywords = (
+    "ça va", "comment vous sentez",
+    "voulez-vous que j'appelle", "voulez-vous que j appelle",
+    "souhaitez-vous", "est-ce que vous allez bien",
+)
+
+# Fichier flag écrit par async_vision_pipeline lors d'une urgence vitale confirmée
+_EMERGENCY_FLAG = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "logs", "emergency.flag"
+)
+_last_emergency_announce: float = 0.0  # horodatage de la dernière annonce TTS urgence
 
 # --- Détection du mode (Pepper vs PC) ---
 PEPPER_IP = os.getenv("PEPPER_IP")
@@ -71,7 +98,7 @@ def _get_pepper_session():
 
 print("Chargement du modèle Whisper...")
 print("[INFO] Utilisation du modèle 'medium' pour meilleure précision médicale...")
-listener = MediBotListener(model_size="medium")
+listener = MediBotListener(model_size="small")
 
 # ===================================================================
 # TTS — PAROLE DU ROBOT
@@ -380,20 +407,108 @@ def _record_pepper() -> np.ndarray:
 
 
 def _record_pc() -> np.ndarray:
-    """Capture audio depuis le microphone du PC pendant DURATION secondes."""
+    """
+    Capture audio via VAD streaming (énergie RMS, end-pointing sur silence).
+
+    Principe :
+        1. Ouvre un flux micro en continu (InputStream)
+        2. Analyse des trames de 30 ms
+        3. Déclenche l'enregistrement quand l'énergie dépasse VAD_START_THRESHOLD
+        4. Conserve un pre-roll de 200 ms (pour attraper le début du mot)
+        5. Ferme quand 800 ms de silence consécutif sont détectés
+        6. Rejette les énoncés trop courts (< 400 ms)
+        7. Plafond absolu : VAD_MAX_DURATION_S secondes
+
+    Retourne un numpy float32 contenant uniquement la parole détectée
+    (ou un array vide en cas de timeout / silence total).
+    """
     try:
         import sounddevice as sd
-        recording = sd.rec(int(DURATION * FS), samplerate=FS, channels=1, dtype='float32')
-        sd.wait()
-        return recording.flatten()
+        from collections import deque
+
+        chunk_samples = int(FS * VAD_CHUNK_MS / 1000)
+        preroll_chunks = max(1, VAD_PRE_ROLL_MS // VAD_CHUNK_MS)
+        silence_chunks_needed = max(1, VAD_SILENCE_MS // VAD_CHUNK_MS)
+        min_speech_chunks = max(1, VAD_MIN_SPEECH_MS // VAD_CHUNK_MS)
+        max_chunks = int(VAD_MAX_DURATION_S * 1000 / VAD_CHUNK_MS)
+        listen_timeout_chunks = int(VAD_LISTEN_TIMEOUT_S * 1000 / VAD_CHUNK_MS)
+
+        preroll = deque(maxlen=preroll_chunks)
+        recorded = []
+        speaking = False
+        silence_run = 0
+        idle_run = 0
+        speech_chunks = 0
+
+        with sd.InputStream(samplerate=FS, channels=1, dtype='float32',
+                            blocksize=chunk_samples) as stream:
+            while True:
+                chunk, _ = stream.read(chunk_samples)
+                chunk = chunk.flatten()
+                energy = float(np.sqrt(np.mean(chunk ** 2)))
+
+                if not speaking:
+                    preroll.append(chunk)
+                    if energy > VAD_START_THRESHOLD:
+                        # Début détecté → on garde le pre-roll
+                        recorded.extend(preroll)
+                        recorded.append(chunk)
+                        speaking = True
+                        silence_run = 0
+                        speech_chunks = 1
+                    else:
+                        idle_run += 1
+                        if idle_run >= listen_timeout_chunks:
+                            # Rien entendu → on relâche proprement
+                            return np.zeros(0, dtype=np.float32)
+                else:
+                    recorded.append(chunk)
+                    speech_chunks += 1
+                    if energy > VAD_START_THRESHOLD:
+                        silence_run = 0
+                    else:
+                        silence_run += 1
+                        if silence_run >= silence_chunks_needed:
+                            break  # fin naturelle détectée
+
+                    if len(recorded) >= max_chunks:
+                        break  # plafond atteint
+
+        if speech_chunks < min_speech_chunks:
+            return np.zeros(0, dtype=np.float32)  # rejeté (bruit bref)
+
+        return np.concatenate(recorded).astype(np.float32)
+
     except Exception as e:
-        print(f"[PC MIC] Erreur sounddevice : {e}")
+        print(f"[PC MIC] Erreur sounddevice/VAD : {e}")
         return np.zeros(int(DURATION * FS), dtype=np.float32)
 
 
 # ===================================================================
 # UTILITAIRES
 # ===================================================================
+
+def _is_vision_emergency_active() -> bool:
+    """
+    Vérifie si une urgence vitale a été détectée par la caméra.
+    Lit le fichier flag écrit par async_vision_pipeline.
+    Le flag expire automatiquement après 10 minutes.
+    """
+    if not os.path.exists(_EMERGENCY_FLAG):
+        return False
+    try:
+        with open(_EMERGENCY_FLAG, encoding="utf-8") as _f:
+            ts = float(_f.readline().strip())
+        if time.time() - ts > 600:  # expire après 10 min
+            try:
+                os.remove(_EMERGENCY_FLAG)
+            except Exception:
+                pass
+            return False
+        return True
+    except Exception:
+        return False
+
 
 def has_speech(audio_data: np.ndarray, threshold: float = MIN_ENERGY_THRESHOLD) -> bool:
     """Détecte si l'audio contient de la parole (énergie RMS > seuil)."""
@@ -407,12 +522,19 @@ def send_to_rasa(message: str, max_retries: int = 3) -> None:
     Gère deux types de messages Rasa :
     - text       → prononcé via TTS (speak)
     - play_audio → fichier WAV joué via play_audio()
+
+    Si la réponse du bot contient une question critique (ex. « voulez-vous
+    que j'appelle quelqu'un ? »), arme un timer de silence SILENCE_TIMEOUT_S
+    secondes. Si le patient reste muet après, un intent silence_timeout
+    sera envoyé par la boucle principale.
     """
+    global _awaiting_answer_until
     payload = {"sender": "user_voice", "message": message}
     for attempt in range(1, max_retries + 1):
         try:
             response = requests.post(RASA_URL, json=payload, timeout=30)
             res_json = response.json()
+            combined_text = ""
             for msg in res_json:
                 # --- Message audio instrumental ---
                 custom = msg.get('custom') or {}
@@ -425,6 +547,14 @@ def send_to_rasa(message: str, max_retries: int = 3) -> None:
                 if bot_text:
                     print(f"MediBot : {bot_text}")
                     speak(bot_text)
+                    combined_text += " " + bot_text.lower()
+
+            # Armer le timer de silence si le bot a posé une question critique
+            if any(k in combined_text for k in _silence_keywords):
+                _awaiting_answer_until = time.time() + SILENCE_TIMEOUT_S
+                print(f"[VAD] ⏱️  Attente réponse patient ({SILENCE_TIMEOUT_S}s max)")
+            else:
+                _awaiting_answer_until = 0.0
             return  # Succès, on quitte
         except requests.exceptions.ConnectionError:
             if attempt < max_retries:
@@ -477,16 +607,25 @@ def run_voice_loop(is_emergency_fn=None) -> None:
         print("[WARN] ⚠️ Rasa n'a pas répondu après 2 min. On continue quand même.\n")
 
     while True:
-        # --- Priorité absolue : suspendre si urgence vitale détectée ---
-        if is_emergency_fn is not None and is_emergency_fn():
-            print("\n[AUDIO] ⏸  Dialogue suspendu — urgence vitale en cours...")
-            time.sleep(2)
-            continue
-
         icon = "🤖" if USE_PEPPER else "🎤"
-        print(f"\n{icon} --- ÉCOUTE en cours ({DURATION}s)... ---")
+        if USE_PEPPER:
+            print(f"\n{icon} --- ÉCOUTE Pepper ({DURATION}s)... ---")
+        else:
+            print(f"\n{icon} --- En écoute (VAD actif, max {VAD_MAX_DURATION_S}s)... ---")
 
         recording = record_audio()
+
+        # VAD renvoie array vide = rien entendu → vérifier si on attendait une réponse critique
+        if recording.size == 0:
+            global _awaiting_answer_until
+            if _awaiting_answer_until > 0 and time.time() >= _awaiting_answer_until:
+                print("\n[VAD] 🔕 Silence de 5s après question critique → notification Rasa")
+                _awaiting_answer_until = 0.0  # désarmer avant l'envoi
+                try:
+                    send_to_rasa("/silence_timeout")
+                except Exception as _e:
+                    print(f"[VAD] Erreur notification silence : {_e}")
+            continue
 
         if not has_speech(recording):
             print("   ... Aucune voix détectée (trop silencieux) ...")
@@ -494,14 +633,12 @@ def run_voice_loop(is_emergency_fn=None) -> None:
 
         write(TEMP_FILE, FS, recording)
 
-        print("   ⏳ Transcription en cours...")
+        duration_s = len(recording) / FS
+        print(f"   ⏳ Transcription en cours ({duration_s:.1f}s captées)...")
         text = listener.transcribe(TEMP_FILE)
 
         if text and len(text) > 2:
             print(f"✅ Vous avez dit : {text}")
-            if is_emergency_fn is not None and is_emergency_fn():
-                print("[AUDIO] ⏸ Transcription ignorée (urgence prioritaire)")
-                continue
             send_to_rasa(text)
         else:
             print("   ❌ Aucun texte reconnu (bruit ou souffle)")

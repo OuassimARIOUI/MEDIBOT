@@ -19,6 +19,7 @@ intents:
   - request_song
   - request_discussion
   - request_joke
+  - silence_timeout
 
 entities:
   - first_name
@@ -59,6 +60,13 @@ slots:
     mappings:
       - type: custom
   
+  asked_wellness:
+    type: bool
+    influence_conversation: true
+    initial_value: false
+    mappings:
+      - type: custom
+
   asked_emergency:
     type: bool
     influence_conversation: true
@@ -91,10 +99,12 @@ actions:
   - action_play_song
   - action_tell_joke
   - action_session_start
+  - action_ask_wellbeing
   - action_ask_help
   - action_propose_activity
   - action_handle_affirm
   - action_handle_deny
+  - action_handle_silence_timeout
 
 responses:
 

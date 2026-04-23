@@ -37,7 +37,7 @@ def _get_deepface():
     return _deepface
 
 # Interval minimum entre deux réactions pour la même émotion (secondes)
-REACTION_COOLDOWN = 30
+REACTION_COOLDOWN = 10
 # Nombre de frames consécutives d'une même émotion avant réaction
 STABILITY_THRESHOLD = 3
 
@@ -71,7 +71,7 @@ class EmotionPipeline:
       alert_url      : URL du dashboard Flask pour les alertes
     """
 
-    def __init__(self, patient_id: str = "UNKNOWN",
+    def __init__(self, patient_id: str = "",
                  pepper_session=None,
                  alert_url: str = "http://localhost:5000/api/alerts"):
 

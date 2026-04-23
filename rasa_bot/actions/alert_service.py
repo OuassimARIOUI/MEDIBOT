@@ -1,6 +1,7 @@
 
 import requests
 import json
+import re
 from datetime import datetime
 from typing import Optional, Dict
 import os
@@ -14,6 +15,14 @@ except ImportError:
 
 # URL du dashboard Flask (à configurer)
 DASHBOARD_URL = os.getenv("DASHBOARD_URL", "http://localhost:5000/api/alerts")
+
+# RÈGLE MÉTIER : seul un ID de la forme PATxxx est accepté
+_PAT_ID_RE = re.compile(r"^PAT\d+$", re.IGNORECASE)
+
+def _is_valid_pat_id(pid) -> bool:
+    if not pid:
+        return False
+    return bool(_PAT_ID_RE.match(str(pid).strip()))
 
 
 def get_patient_info(patient_id: str) -> Optional[Dict[str, str]]:
@@ -52,18 +61,11 @@ def save_alert_to_db(patient_id: str, room_number: str, patient_name: str, messa
                      alert_type: str = "general", severity: str = "medium") -> int:
     """
     Enregistre l'alerte dans la base de données locale.
-    
-    Args:
-        patient_id: ID du patient
-        room_number: Numéro de chambre
-        patient_name: Nom complet du patient
-        message: Message d'urgence
-        alert_type: Type d'alerte (general, emergency, call, etc.)
-        severity: Niveau de sévérité (low, medium, high)
-        
-    Returns:
-        L'ID de l'alerte créée
+    Refuse si patient_id n'est pas PATxxx.
     """
+    if not _is_valid_pat_id(patient_id):
+        print(f"[ALERTE BLOQUÉE] patient_id invalide ('{patient_id}') — non insérée.")
+        return -1
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -90,17 +92,12 @@ def send_alert_to_dashboard(
 ) -> bool:
     """
     Envoie une alerte d'urgence au dashboard Flask.
-    
-    Args:
-        patient_id: L'identifiant du patient
-        room_number: Le numéro de chambre
-        patient_name: Le nom complet du patient
-        message: Le message ou motif de l'alerte
-        alert_type: Type d'alerte (par défaut "URGENCE")
-        
-    Returns:
-        True si l'envoi a réussi, False sinon
+    Refuse strictement si patient_id n'est pas PATxxx.
     """
+    if not _is_valid_pat_id(patient_id):
+        print(f"[ALERTE BLOQUÉE] patient_id invalide ('{patient_id}') — dashboard non contacté.")
+        return False
+
     alert_data = {
         "patient_id": patient_id,
         "patient_name": patient_name,
