@@ -33,7 +33,7 @@ from whisper_listener import MediBotListener
 # --- CONFIGURATION ---
 RASA_URL = "http://localhost:5005/webhooks/rest/webhook"
 FS = 16000        # Fréquence d'échantillonnage Whisper
-DURATION = 3      # 5s — bon compromis (8s trop long, 3s trop court)
+DURATION = 3      # Durée d'enregistrement fixe (secondes)
 TEMP_FILE = "temp_voice.wav"
 MIN_ENERGY_THRESHOLD = 0.003  # Seuil bas pour ne rien rater (0.01 filtrait trop)
 
@@ -70,8 +70,8 @@ def _get_pepper_session():
         return None
 
 print("Chargement du modèle Whisper...")
-print("[INFO] Utilisation du modèle 'small' pour meilleure précision...")
-listener = MediBotListener(model_size="small")
+print("[INFO] Utilisation du modèle 'medium' pour meilleure précision médicale...")
+listener = MediBotListener(model_size="medium")
 
 # ===================================================================
 # TTS — PAROLE DU ROBOT
@@ -282,10 +282,61 @@ def record_audio() -> np.ndarray:
         return _record_pc()
 
 
+def _fetch_pepper_audio(remote_path: str, local_path: str):
+    """
+    Transfère le WAV enregistré sur Pepper via SFTP (ou SCP en fallback)
+    et retourne un numpy array float32. Retourne None en cas d'échec.
+    """
+    transferred = False
+    try:
+        import paramiko
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(PEPPER_IP, username="nao", password="nao", timeout=5)
+        sftp = ssh.open_sftp()
+        sftp.get(remote_path, local_path)
+        sftp.close()
+        ssh.close()
+        transferred = True
+        print(f"[PEPPER MIC] 📥 Fichier récupéré via SFTP → {local_path}")
+    except ImportError:
+        print("[PEPPER MIC] paramiko non installé, tentative scp...")
+    except Exception as e:
+        print(f"[PEPPER FETCH] SFTP échoué ({e}), tentative SCP...")
+
+    if not transferred:
+        try:
+            import subprocess
+            r = subprocess.run(
+                ["scp", "-o", "StrictHostKeyChecking=no",
+                 f"nao@{PEPPER_IP}:{remote_path}", local_path],
+                capture_output=True, timeout=10
+            )
+            if r.returncode == 0:
+                transferred = True
+            else:
+                print(f"[PEPPER FETCH] SCP échoué: {r.stderr.decode(errors='ignore')}")
+        except Exception as e:
+            print(f"[PEPPER FETCH] SCP erreur: {e}")
+
+    if not transferred or not os.path.exists(local_path) or os.path.getsize(local_path) < 100:
+        return None
+
+    try:
+        from scipy.io.wavfile import read as wavread
+        _, data = wavread(local_path)
+        if data.ndim > 1:
+            data = data[:, 0]
+        return data.astype(np.float32) / 32768.0
+    except Exception as e:
+        print(f"[PEPPER FETCH] Lecture WAV échouée: {e}")
+        return None
+
+
 def _record_pepper() -> np.ndarray:
     """
     Capture audio depuis les microphones de Pepper (ALAudioRecorder).
-    1. Enregistre sur /home/nao/temp_medibot.wav via NAOqi
+    1. Enregistre sur /home/nao/temp_medibot.wav via NAOqi pendant DURATION secondes
     2. Récupère le fichier via SFTP (paramiko) ou SCP
     3. Lit le WAV localement et retourne un numpy array
     """
@@ -298,66 +349,30 @@ def _record_pepper() -> np.ndarray:
         remote_path = "/home/nao/temp_medibot.wav"
         local_path = os.path.join(os.path.dirname(__file__), "pepper_audio.wav")
 
-        # Supprimer l'ancien enregistrement distant s'il existe
         try:
             recorder.stopMicrophonesRecording()
         except Exception:
             pass
 
-        # Enregistrement — micro frontal + gauche
-        # NAOqi attend une LISTE (AL::ALValue), PAS un tuple
-        # [Left, Right, Front, Rear] — 1=actif, 0=inactif
-        channels = [0, 0, 1, 0]   # Front uniquement (le plus proche du patient)
+        # [Left, Right, Front, Rear] — Front uniquement (le plus proche du patient)
+        channels = [0, 0, 1, 0]
         print(f"[PEPPER MIC] 🎤 Écoute en cours ({DURATION}s)...")
         recorder.startMicrophonesRecording(remote_path, "wav", FS, channels)
         time.sleep(DURATION)
         recorder.stopMicrophonesRecording()
         print("[PEPPER MIC] ✅ Enregistrement terminé.")
 
-        # --- Récupérer le fichier via SFTP ---
-        try:
-            import paramiko
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(PEPPER_IP, username="nao", password="nao", timeout=5)
-            sftp = ssh.open_sftp()
-            sftp.get(remote_path, local_path)
-            sftp.close()
-            ssh.close()
-            print(f"[PEPPER MIC] 📥 Fichier récupéré via SFTP → {local_path}")
-        except ImportError:
-            # paramiko pas installé → essayer scp via subprocess
-            print("[PEPPER MIC] paramiko non installé, tentative scp...")
-            import subprocess
-            result = subprocess.run(
-                ["scp", f"nao@{PEPPER_IP}:{remote_path}", local_path],
-                capture_output=True, timeout=10
-            )
-            if result.returncode != 0:
-                print(f"[PEPPER MIC] ⚠️ SCP échoué : {result.stderr.decode()}")
-                print("[PEPPER MIC] Fallback micro PC.")
-                return _record_pc()
-        except Exception as e:
-            print(f"[PEPPER MIC] ⚠️ Transfert échoué ({e}), fallback micro PC.")
-            return _record_pc()
-
-        # --- Lire le WAV récupéré ---
-        if os.path.exists(local_path) and os.path.getsize(local_path) > 100:
-            from scipy.io.wavfile import read as wavread
-            rate, data = wavread(local_path)
-            if data.ndim > 1:
-                data = data[:, 0]  # Mono uniquement
-            audio = data.astype(np.float32) / 32768.0
-            energy = np.sqrt(np.mean(audio ** 2))
+        audio = _fetch_pepper_audio(remote_path, local_path)
+        if audio is not None:
+            energy = float(np.sqrt(np.mean(audio ** 2)))
             print(f"[PEPPER MIC] 📊 Énergie audio : {energy:.4f} (seuil: {MIN_ENERGY_THRESHOLD})")
             return audio
-        else:
-            print("[PEPPER MIC] ⚠️ Fichier audio vide ou introuvable, fallback micro PC.")
-            return _record_pc()
+
+        print("[PEPPER MIC] ⚠️ Fichier audio vide ou introuvable, fallback micro PC.")
+        return _record_pc()
 
     except Exception as e:
         print(f"[PEPPER MIC] Erreur ({e}), fallback micro PC.")
-        # Ne reset la session que si c'est une erreur de connexion
         if "connection" in str(e).lower() or "disconnected" in str(e).lower():
             global _pepper_session
             _pepper_session = None
@@ -365,15 +380,15 @@ def _record_pepper() -> np.ndarray:
 
 
 def _record_pc() -> np.ndarray:
-    """Capture audio depuis le microphone du PC (mode simulation)."""
+    """Capture audio depuis le microphone du PC pendant DURATION secondes."""
     try:
         import sounddevice as sd
         recording = sd.rec(int(DURATION * FS), samplerate=FS, channels=1, dtype='float32')
         sd.wait()
-        return recording
+        return recording.flatten()
     except Exception as e:
         print(f"[PC MIC] Erreur sounddevice : {e}")
-        return np.zeros((int(DURATION * FS), 1), dtype='float32')
+        return np.zeros(int(DURATION * FS), dtype=np.float32)
 
 
 # ===================================================================
@@ -427,8 +442,14 @@ def send_to_rasa(message: str, max_retries: int = 3) -> None:
 # BOUCLE PRINCIPALE
 # ===================================================================
 
-def run_voice_loop() -> None:
-    """Boucle principale : Écoute → Transcription → Rasa → Voix."""
+def run_voice_loop(is_emergency_fn=None) -> None:
+    """
+    Boucle principale : Écoute → Transcription → Rasa → Voix.
+
+    Args:
+        is_emergency_fn: callable() -> bool optionnel, fourni par l'orchestrateur.
+                         Si retourne True, le cycle Rasa est suspendu (urgence vitale).
+    """
     mode = "PEPPER" if USE_PEPPER else "SIMULATION PC"
     print(f"\n=== MediBot est prêt ! Mode : {mode} (CTRL+C pour arrêter) ===")
     if USE_PEPPER:
@@ -456,6 +477,12 @@ def run_voice_loop() -> None:
         print("[WARN] ⚠️ Rasa n'a pas répondu après 2 min. On continue quand même.\n")
 
     while True:
+        # --- Priorité absolue : suspendre si urgence vitale détectée ---
+        if is_emergency_fn is not None and is_emergency_fn():
+            print("\n[AUDIO] ⏸  Dialogue suspendu — urgence vitale en cours...")
+            time.sleep(2)
+            continue
+
         icon = "🤖" if USE_PEPPER else "🎤"
         print(f"\n{icon} --- ÉCOUTE en cours ({DURATION}s)... ---")
 
@@ -472,9 +499,12 @@ def run_voice_loop() -> None:
 
         if text and len(text) > 2:
             print(f"✅ Vous avez dit : {text}")
+            if is_emergency_fn is not None and is_emergency_fn():
+                print("[AUDIO] ⏸ Transcription ignorée (urgence prioritaire)")
+                continue
             send_to_rasa(text)
         else:
-            print("   ❌ Aucun texte reconnu (bruit parasite)")
+            print("   ❌ Aucun texte reconnu (bruit ou souffle)")
 
 
 if __name__ == "__main__":

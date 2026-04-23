@@ -37,16 +37,6 @@ CREATE TABLE IF NOT EXISTS alerts (
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
 );
 
--- ---------- EMOTION LOGS ----------
-CREATE TABLE IF NOT EXISTS emotion_logs (
-    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id TEXT NOT NULL,
-    emotion TEXT NOT NULL,
-    severity TEXT DEFAULT 'low',
-    detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
-);
-
 -- ==========================
 -- DONNÉES INITIALES
 -- ==========================

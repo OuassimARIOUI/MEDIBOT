@@ -160,7 +160,7 @@ class EmotionPipeline:
         # 3. Enregistrer l'emotion dans la BD (emotion_logs) -- TOUJOURS
         self._log_emotion_to_db(emotion, reaction.get("severity", "low"))
 
-        # 4. Alerte soignant si necessaire (sad/angry/fear)
+        # 3. Alerte soignant si nécessaire
         if reaction.get("alert"):
             self._send_alert(emotion, reaction["severity"])
 
@@ -185,27 +185,13 @@ class EmotionPipeline:
         else:
             print(f"  [SIM TTS] {text}")
 
-    def _log_emotion_to_db(self, emotion: str, severity: str) -> None:
-        """Enregistre l'emotion detectee dans la table emotion_logs de la BD."""
-        sev = severity or "low"
-        try:
-            self._alert_system.log_emotion(
-                patient_id=self.patient_id,
-                emotion=emotion,
-                severity=sev
-            )
-            logger.info(f"Emotion '{emotion}' enregistree en BD pour {self.patient_id}")
-        except Exception as e:
-            logger.error(f"Erreur log emotion BD: {e}")
-
     def _send_alert(self, emotion: str, severity: str) -> None:
-        """
-        Envoie une alerte au dashboard Flask via AlertSystem.
-        Insere dans la BD + notifie les infirmiers.
-        """
-        logger.warning(f"ALERTE emotion [{severity}] : {emotion} pour {self.patient_id}")
-        self._alert_system.send_emotion_alert(
-            emotion=emotion,
-            patient_id=self.patient_id,
-            severity=severity
+        """Envoie une alerte au dashboard Flask via AlertSystem."""
+        level = 2 if severity == "high" else 1
+        reason = f"Émotion de détresse détectée : {emotion} (patient {self.patient_id})"
+        logger.warning(f"ALERTE niveau {level} : {reason}")
+        self._alert_system.send_alert(
+            level=level,
+            reason=reason,
+            patient_id=self.patient_id
         )

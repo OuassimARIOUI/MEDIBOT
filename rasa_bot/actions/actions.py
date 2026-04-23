@@ -16,7 +16,8 @@ try:
         get_patient_by_name,
         get_patient_medicines,
         get_patient_discharge_date,
-        get_all_patients
+        get_all_patients,
+        set_current_patient,
     )
     from alert_service import trigger_emergency_alert, trigger_nurse_call
 except ImportError:
@@ -27,7 +28,8 @@ except ImportError:
         get_patient_by_name,
         get_patient_medicines,
         get_patient_discharge_date,
-        get_all_patients
+        get_all_patients,
+        set_current_patient,
     )
     from .alert_service import trigger_emergency_alert, trigger_nurse_call
 
@@ -242,7 +244,14 @@ class ActionIdentifyPatient(Action):
                 dispatcher.utter_message(
                     text=f"Parfait ! Je vous ai bien identifié, {full_name}."
                 )
-                
+
+                # Persister l'identification en DB (partagée avec le pipeline vision)
+                try:
+                    set_current_patient(patient_id, db_first, db_last)
+                    print(f"[IDENTIFICATION] ✅ Session patient enregistrée en DB : {patient_id}")
+                except Exception as e_db:
+                    print(f"[IDENTIFICATION] ⚠️ Erreur DB session : {e_db}")
+
                 # Stocker dans les slots (mémoire du bot)
                 return [
                     SlotSet("first_name", db_first),
