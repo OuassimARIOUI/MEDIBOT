@@ -13,6 +13,10 @@ import platform
 import socket
 from pathlib import Path
 
+# Force UTF-8 encoding for stdout to handle emojis and box characters on Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 # Charger les variables d'environnement depuis .env
 try:
     from dotenv import load_dotenv
@@ -312,7 +316,11 @@ class MediBotLauncher:
         with open(launcher_path, 'w', encoding='utf-8') as f:
             f.write(launcher_code)
         
-        cmd = [sys.executable, "_run_emotion.py"]
+        python_exe = os.getenv("EMOTION_VENV_PYTHON", "").strip()
+        if not python_exe or not os.path.isfile(python_exe):
+            python_exe = sys.executable
+
+        cmd = [python_exe, "_run_emotion.py"]
         cwd = self.base_dir / "emotion_detection"
         log_f = self._open_log("emotion_detection")
         

@@ -127,16 +127,16 @@ if __name__ == '__main__':
     # Check if database exists
     db_path = app.config['DATABASE_PATH']
     if not os.path.exists(db_path):
-        print(f"⚠️  Warning: Database not found at {db_path}")
+        print(f"[WARN] Database not found at {db_path}")
         print("Make sure the RASA bot has created the database.")
     else:
-        print(f"✓ Database found at {db_path}")
+        print(f"[OK] Database found at {db_path}")
     
     print("\n" + "="*60)
-    print("🏥 MediBot API Server Starting...")
+    print("[MEDIBOT] API Server Starting...")
     print("="*60)
-    print(f"📍 API available at: http://localhost:5000")
-    print(f"📊 Dashboard frontend should run on: http://localhost:3000")
+    print(f"[API] Available at: http://localhost:5000")
+    print(f"[DASHBOARD] Frontend should run on: http://localhost:3000")
     print("="*60 + "\n")
     
     # Run Flask + SocketIO server
