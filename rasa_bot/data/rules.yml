@@ -81,6 +81,36 @@ rules:
 
 
 # =============================================
+# RÈGLE : Patient exprime mal-être en contexte wellness
+# (NLU peut classer "non je vais pas bien" en check_feeling_bad)
+# → on route vers action_ask_help (et NON utter_goodbye)
+# =============================================
+
+- rule: patient mal etre en contexte wellness
+  condition:
+    - slot_was_set:
+      - asked_wellness: true
+  steps:
+    - intent: check_feeling_bad
+    - action: action_ask_help
+
+
+# =============================================
+# RÈGLE : Garde anti-goodbye en contexte wellness
+# Si le NLU classe à tort la réponse comme goodbye juste après
+# "Est-ce que vous allez bien ?", on traite comme un mal-être.
+# =============================================
+
+- rule: garde goodbye en contexte wellness
+  condition:
+    - slot_was_set:
+      - asked_wellness: true
+  steps:
+    - intent: goodbye
+    - action: action_ask_help
+
+
+# =============================================
 # RÈGLE : Patient dit OUI (contexte urgence)
 # =============================================
 
@@ -172,6 +202,16 @@ rules:
   steps:
     - intent: ask_time
     - action: action_get_time
+
+
+# =============================================
+# RÈGLE : Demande météo (API externe)
+# =============================================
+
+- rule: demander meteo
+  steps:
+    - intent: ask_weather
+    - action: action_get_weather
 
 
 # =============================================

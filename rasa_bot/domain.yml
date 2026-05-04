@@ -11,6 +11,7 @@ intents:
   - ask_medicine
   - ask_discharge
   - ask_nurse
+  - ask_weather
   - emergency
   - call_nurse
   - affirm
@@ -93,6 +94,7 @@ actions:
   - action_get_date
   - action_get_medicine
   - action_get_discharge
+  - action_get_weather
   - action_trigger_alert
   - action_call_nurse
   - action_identify_patient

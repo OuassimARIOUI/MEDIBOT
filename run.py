@@ -821,7 +821,7 @@ class MediBotLauncher:
 
                             # Parler — appel bloquant, attend la fin de la phrase
                             log_service("TTS", "Robot parle maintenant...", Colors.CYAN)
-                            tts_svc.say("\\vol=100\\ Bonjour ! Je suis Médi Bot. Connexion réussie.")
+                            tts_svc.say("\\vol=100\\ Bonjour ! Je suis Médi Bot.")
                             log_service("Test TTS", "✓ Le robot a parlé !", Colors.GREEN)
                         
                         if self.pepper_controller and self.pepper_controller.leds:

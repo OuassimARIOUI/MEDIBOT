@@ -252,7 +252,7 @@ def vision_thread_fn(
         patient_id=PATIENT_ID,
         alert_url=DASHBOARD_URL,
         use_server_vision=use_server,
-        emotion_interval=2.5,      # DeepFace ~1 analyse / 2.5s (suffisant)
+        emotion_interval=1.2,      # DeepFace ~1 analyse / 1.2s + lissage EMA
         emergency_interval=0.4,    # MediaPipe ~2.5 FPS (urgences critiques)
     )
 

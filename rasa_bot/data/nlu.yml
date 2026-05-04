@@ -172,9 +172,10 @@ nlu:
     - au revoir
     - bonne nuit
     - à plus tard
-    - merci bonne nuit
     - tu peux partir
     - laisse-moi dormir
+    - bye
+    - salut bonne nuit
 
 
 # ÉTAT DU PATIENT
@@ -223,6 +224,22 @@ nlu:
     - ça ne va pas du tout
     - j'ai des douleurs
     - je souffre
+    - non je vais pas bien
+    - non, je vais pas bien
+    - non je ne vais pas bien
+    - non, je ne vais pas bien
+    - non je vais pas bien je me sens mal
+    - non je me sens mal
+    - non pas très bien
+    - je vais pas bien
+    - je vais pas bien du tout
+    - je vais pas bien je me sens mal
+    - non je vais mal
+    - non j'ai mal
+    - non ça va pas
+    - ca va pas
+    - ça va pas
+    - non ca va pas du tout
 
 
 # DEMANDE HEURE / DATE
@@ -234,6 +251,31 @@ nlu:
     - tu peux me dire l'heure
     - c'est quelle heure maintenant
     - donne-moi l'heure
+
+- intent: ask_weather
+  examples: |
+    - il fait combien de degrés dehors
+    - il fait combien dehors
+    - il fait quelle température
+    - quelle est la température
+    - quel temps fait-il
+    - quel temps fait il dehors
+    - il fait beau dehors
+    - il fait chaud dehors
+    - il fait froid dehors
+    - quelle température il fait
+    - peux-tu me dire la météo
+    - donne-moi la météo
+    - c'est quoi la météo
+    - il fait combien de degrés
+    - combien de degrés dehors
+    - combien il fait dehors
+    - il fait combien à avignon
+    - quel temps à avignon
+    - la météo à avignon
+    - température à avignon
+    - il fait quel temps
+    - il pleut dehors
 
 - intent: ask_date
   examples: |

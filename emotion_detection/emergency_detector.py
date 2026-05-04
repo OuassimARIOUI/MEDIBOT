@@ -64,10 +64,11 @@ class EmergencyDetector:
 
             # 2. Test Respiration Précis (Basé sur les épaules détectées)
             if not self.detect_breathing(frame, landmarks):
-                # Le cahier des charges impose 10s d'observation 
-                if time.time() - self.last_check_time > 10:
+                # Fenêtre d'observation : 6s (compromis sécurité / réactivité).
+                # 10s était trop tardif d'après les tests terrain.
+                if time.time() - self.last_check_time > 6:
                     emergency_detected = True
-                    reason = "Absence de respiration détectée (10s sans mouvement thoracique)" 
+                    reason = "Absence de respiration détectée (6s sans mouvement thoracique)"
             else:
                 self.last_check_time = time.time() # Reset si mouvement détecté
 

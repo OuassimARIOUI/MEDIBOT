@@ -38,12 +38,14 @@ TEMP_FILE = "temp_voice.wav"
 MIN_ENERGY_THRESHOLD = 0.003  # Seuil bas pour ne rien rater (0.01 filtrait trop)
 
 # ── Paramètres VAD (Voice Activity Detection) ───────────────────────────
+# OPTIMISATION LATENCE : silence end-pointing 800→450ms, max 8→6s.
+# Le robot répond ainsi ~350ms plus vite après la fin de la phrase.
 VAD_CHUNK_MS = 30                # taille d'une trame d'analyse (ms)
 VAD_START_THRESHOLD = 0.005      # énergie RMS requise pour déclencher l'enregistrement
-VAD_SILENCE_MS = 800             # silence requis pour fermer l'énoncé (end-pointing)
+VAD_SILENCE_MS = int(os.getenv("VAD_SILENCE_MS", "450"))   # 800→450ms : end-pointing plus rapide
 VAD_PRE_ROLL_MS = 200            # on conserve 200 ms avant la détection (mot de début)
-VAD_MIN_SPEECH_MS = 400          # on rejette les bruits < 400 ms
-VAD_MAX_DURATION_S = 8           # plafond absolu (sécurité)
+VAD_MIN_SPEECH_MS = 350          # on rejette les bruits < 350 ms
+VAD_MAX_DURATION_S = 6           # plafond absolu (sécurité) — phrases courtes en gériatrie
 VAD_LISTEN_TIMEOUT_S = 6         # si aucune voix détectée, on relâche la main
 
 # ── Silence timeout après une question critique ────────────────────────
@@ -97,8 +99,9 @@ def _get_pepper_session():
         return None
 
 print("Chargement du modèle Whisper...")
-print("[INFO] Utilisation du modèle 'medium' pour meilleure précision médicale...")
-listener = MediBotListener(model_size="small")
+# Modèle pilotable via env WHISPER_MODEL (defaut: "base" sur CPU, "small" sur GPU)
+# "base" est ~3x plus rapide que "small" en CPU avec une précision FR très correcte.
+listener = MediBotListener()
 
 # ===================================================================
 # TTS — PAROLE DU ROBOT

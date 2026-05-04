@@ -41,9 +41,25 @@ except ImportError:
 # La pipeline vision (/emotion_detection) est en sommeil tant que
 # Rasa n'a pas décidé que le contexte justifie une surveillance.
 # On active via un flag fichier partagé : logs/vision_enabled.flag
+#
+# Le contenu du flag détermine le MODE de surveillance :
+#   "emotion"   → le patient a dit aller bien : on vérifie l'expression faciale
+#                  (alerte si incohérence)
+#   "emergency" → le patient a dit ne pas aller bien : on cherche les signes
+#                  d'étouffement / arrêt respiratoire
+#   "both"      → cas généraux (urgence confirmée par dialogue)
 # ==========================================================
-def _enable_vision_monitoring(reason: str = "") -> None:
-    """Crée le flag de surveillance. Lu par AsyncVisionPipeline.process_results()."""
+def _enable_vision_monitoring(mode: str = "both", reason: str = "") -> None:
+    """
+    Active la surveillance vidéo dans le mode demandé.
+
+    Args:
+        mode   : "emotion" | "emergency" | "both"
+        reason : libellé pour les logs
+    """
+    valid = ("emotion", "emergency", "both")
+    if mode not in valid:
+        mode = "both"
     try:
         import os as _os
         project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
@@ -52,8 +68,11 @@ def _enable_vision_monitoring(reason: str = "") -> None:
         flag_path = _os.path.join(flag_dir, "vision_enabled.flag")
         import time as _time
         with open(flag_path, "w", encoding="utf-8") as fh:
-            fh.write(f"{_time.time()}\n{reason}")
-        print(f"[VISION] ✅ Surveillance émotionnelle ACTIVÉE — {reason}")
+            # Ligne 1 = mode (lue par async_vision_pipeline._vision_mode)
+            # Ligne 2 = timestamp
+            # Ligne 3 = motif lisible (logs)
+            fh.write(f"{mode}\n{_time.time()}\n{reason}")
+        print(f"[VISION] ✅ Surveillance ACTIVÉE — mode={mode} — {reason}")
     except Exception as _e:
         print(f"[VISION] ⚠️ Impossible d'écrire le flag : {_e}")
 
@@ -162,6 +181,84 @@ class ActionGetTime(Action):
 
         now = datetime.now().strftime("%H:%M")
         dispatcher.utter_message(text=f"Il est actuellement {now}.")
+        return []
+
+
+
+# ACTION : Donner la météo actuelle (Avignon, France) via Open-Meteo (API gratuite, sans clé).
+
+class ActionGetWeather(Action):
+
+    def name(self) -> Text:
+        return "action_get_weather"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+
+        # Avignon, France
+        lat, lon = 43.9493, 4.8055
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={lat}&longitude={lon}"
+            "&current=temperature_2m,weather_code,wind_speed_10m"
+            "&timezone=Europe%2FParis"
+        )
+
+        # Description française des codes WMO les plus courants
+        wmo = {
+            0: "ciel dégagé",
+            1: "plutôt dégagé",
+            2: "partiellement nuageux",
+            3: "couvert",
+            45: "brouillard",
+            48: "brouillard givrant",
+            51: "bruine légère",
+            53: "bruine",
+            55: "bruine forte",
+            61: "pluie légère",
+            63: "pluie",
+            65: "pluie forte",
+            71: "neige légère",
+            73: "neige",
+            75: "neige forte",
+            80: "averses",
+            81: "averses fortes",
+            82: "averses violentes",
+            95: "orage",
+            96: "orage avec grêle",
+            99: "orage violent avec grêle",
+        }
+
+        try:
+            import urllib.request as _urlreq
+            import json as _json
+            req = _urlreq.Request(url, headers={"User-Agent": "MediBot/1.0"})
+            with _urlreq.urlopen(req, timeout=4) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            current = data.get("current", {})
+            temp = current.get("temperature_2m")
+            code = current.get("weather_code")
+            wind = current.get("wind_speed_10m")
+            desc = wmo.get(code, "temps variable")
+            if temp is None:
+                raise ValueError("temperature manquante")
+            temp_round = round(float(temp))
+            msg = (
+                f"À Avignon, il fait {temp_round} degrés, {desc}."
+            )
+            if wind is not None:
+                msg += f" Le vent souffle à {round(float(wind))} kilomètres heure."
+            print(f"[METEO] ✅ {msg}")
+            dispatcher.utter_message(text=msg)
+        except Exception as e:
+            print(f"[METEO] ⚠️ Echec API météo : {e}")
+            dispatcher.utter_message(
+                text="Désolé, je n'arrive pas à récupérer la météo pour l'instant."
+            )
         return []
 
 
@@ -408,9 +505,9 @@ class ActionProposeActivity(Action):
         if already_asked:
             return []
 
-        # Le patient a déclaré aller bien → activer la surveillance émotionnelle
-        # pour vérifier la congruence entre la parole et l'expression faciale
-        _enable_vision_monitoring("patient dit aller bien - vérification émotionnelle")
+        # Le patient a déclaré aller bien → surveillance émotionnelle uniquement
+        # (caméra vérifie la cohérence parole/visage, pas d'analyse d'urgence)
+        _enable_vision_monitoring("emotion", "patient dit aller bien - vérification cohérence")
 
         dispatcher.utter_message(
             text="Parfait. Souhaitez-vous que je vous chante une chanson (je connais des chansons françaises traditionnelles) ou préférez-vous discuter ?"
@@ -478,6 +575,12 @@ class ActionAskHelp(Action):
             # Ne pas redemander
             return []
 
+        # Le patient a dit ne pas aller bien → activer la caméra en mode EMERGENCY
+        # (détection d'étouffement / d'absence de respiration uniquement,
+        # pas d'analyse émotionnelle). Si signe d'étouffement détecté, une
+        # alerte sera émise avec le nom du patient.
+        _enable_vision_monitoring("emergency", "patient dit ne pas aller bien - surveillance vitale")
+
         dispatcher.utter_message(
             text="Je suis désolé de l'entendre. Souhaitez-vous que j'appelle l'équipe d'urgence ?"
         )
@@ -514,10 +617,9 @@ class ActionHandleAffirm(Action):
 
         # ---- Contexte WELLNESS : "Est-ce que vous allez bien ?" → "Oui" ----
         if asked_wellness:
-            # Le patient dit qu'il va bien → activer la surveillance émotionnelle
-            # (vérification silencieuse : si le visage exprime tristesse/colère
-            # alors qu'il dit "oui", les LEDs et les alertes réagiront)
-            _enable_vision_monitoring("patient dit aller bien - vérification émotionnelle")
+            # Le patient dit qu'il va bien → surveillance ÉMOTIONNELLE pure
+            # (vérification silencieuse de cohérence parole/visage)
+            _enable_vision_monitoring("emotion", "patient dit aller bien - vérification cohérence")
             dispatcher.utter_message(
                 text="Parfait. Souhaitez-vous que je vous chante une chanson ou préférez-vous discuter ?"
             )
@@ -528,8 +630,9 @@ class ActionHandleAffirm(Action):
             ]
 
         if asked_emergency:
-            # Déclencher l'alerte niveau 2 + activer la surveillance émotionnelle
-            _enable_vision_monitoring("patient a confirmé vouloir de l'aide")
+            # Déclencher l'alerte niveau 2 + activer la surveillance complète
+            # (le patient a confirmé vouloir de l'aide → on observe tout)
+            _enable_vision_monitoring("both", "patient a confirmé vouloir de l'aide")
 
             # Résoudre le patient depuis la session DB si le slot est vide
             _eff_patient_id = patient_id
@@ -602,7 +705,10 @@ class ActionHandleDeny(Action):
 
         # ---- Contexte WELLNESS : "Est-ce que vous allez bien ?" → "Non" ----
         if asked_wellness:
-            # Équivalent à check_feeling_bad : proposer l'aide d'urgence
+            # Le patient dit qu'il ne va pas bien → caméra en mode EMERGENCY
+            # (détection d'étouffement / arrêt respiratoire ; aucune analyse
+            # d'émotion). Alerte automatique avec le nom du patient si signe vital.
+            _enable_vision_monitoring("emergency", "patient dit ne pas aller bien - surveillance vitale")
             dispatcher.utter_message(
                 text="Je suis désolé de l'entendre. Souhaitez-vous que j'appelle l'équipe d'urgence ?"
             )
@@ -613,9 +719,10 @@ class ActionHandleDeny(Action):
             ]
 
         if asked_emergency:
-            # Patient refuse d'appeler → on active la surveillance par précaution
-            # (il a dit ne pas aller bien, mais refuse de l'aide → signal à surveiller)
-            _enable_vision_monitoring("patient refuse aide après avoir dit ne pas aller bien")
+            # Patient refuse d'appeler mais a dit ne pas aller bien →
+            # surveillance EMERGENCY (on cherche les signes vitaux : étouffement,
+            # arrêt respiratoire). On n'analyse pas les émotions ici.
+            _enable_vision_monitoring("emergency", "patient refuse aide après avoir dit ne pas aller bien")
             dispatcher.utter_message(
                 text="Souhaitez-vous que je vous raconte une blague ou que je vous mette une musique apaisante ?"
             )
@@ -1043,7 +1150,14 @@ class ActionTriggerAlert(Action):
     ) -> List[Dict[Text, Any]]:
 
         user_message = tracker.latest_message.get("text")
-        
+
+        # >>> Activation caméra : URGENCE déclarée par le patient
+        # Mode 'both' : surveillance vitale (étouffement/respiration) + cohérence émotionnelle
+        _enable_vision_monitoring(
+            "both",
+            f"URGENCE déclarée par le patient : {user_message}",
+        )
+
         # Récupérer le patient_id depuis les slots (si identifié)
         patient_id = tracker.get_slot("patient_id")
         patient_name = tracker.get_slot("patient_full_name")
@@ -1124,7 +1238,14 @@ class ActionCallNurse(Action):
     ) -> List[Dict[Text, Any]]:
 
         user_message = tracker.latest_message.get("text")
-        
+
+        # >>> Activation caméra : demande d'aide humaine ("cherche moi quelqu'un" / appel infirmière)
+        # Mode 'both' : on surveille étouffement + émotions en attendant le personnel
+        _enable_vision_monitoring(
+            "both",
+            f"Demande d'aide / infirmière : {user_message}",
+        )
+
         # Récupérer le patient_id depuis les slots (si identifié)
         patient_id = tracker.get_slot("patient_id")
         patient_name = tracker.get_slot("patient_full_name")
