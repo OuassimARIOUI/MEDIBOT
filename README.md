@@ -63,6 +63,5 @@ medibot/
 └── docs/                         # Documentation / cahier charges
     ├── Cahier_Des_Charges.pdf
     ├── Architecture_MediBot.pdf
-    ├── Diagrammes/
-    └── Sense_Tree.png
+    └── run.py
 ```
