@@ -2,7 +2,7 @@
 Tests WebSocket temps réel (Flask-SocketIO)
 ============================================
 
-Vérifie que :
+Vérifie que:
 - Le serveur SocketIO démarre et accepte les connexions
 - POST /api/alerts émet l'événement 'new_alert' via WebSocket
 - POST /api/alerts/<id>/acknowledge émet 'alert_acknowledged'
